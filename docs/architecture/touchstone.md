@@ -1,7 +1,7 @@
 # Design: Touchstone
 
 **Date:** 2026-10-22
-**Status:** proposed
+**Status:** accepted
 **PRD:** [`docs/product/touchstone.md`](../product/touchstone.md) (P0 stories #1–#5)
 **Stack:** protobuf/gRPC (grpc-gateway) + Docker; Go 1.26 (engine, CLI, server) + TypeScript 5 / Next.js (current major) static export + Tailwind (web page)
 
@@ -110,7 +110,7 @@ So the High tier will often be empty from discovery alone, which confirms
 the PRD's A2 risk. **This design adds one input the PRD doesn't name: an
 SBOM/VEX the reviewer already has** (URL or uploaded file, from a vendor
 questionnaire). It's High tier, and in vendor reviews it's the most likely
-way to get an SBOM. Needs PRD sign-off; tracked as decision D1 below.
+way to get an SBOM. Accepted as decision D1; PRD Story 1 amended.
 
 ### Fingerprinting: Retire.js signatures in Go
 
@@ -368,13 +368,13 @@ After S0, slices S1, S3, S4, S5, S6, S7, S8 and S9 can run in parallel.
 S3 and S4 both touch `internal/vuln`: S4's VEX application goes in its own
 file behind `vuln.ApplyVEX` to avoid conflicts.
 
-## Decisions for the user
+## Decisions (accepted 2026-10-22)
 
-| # | Decision | Default |
+| # | Decision | Outcome |
 |---|---|---|
-| D1 | Add **reviewer-supplied SBOM/VEX** (URL or upload) as a High-tier input. Not in the PRD; discovery alone will rarely find an SBOM | Yes. Amend PRD Story 1 |
-| D2 | Drop the npm package; ship GoReleaser binaries + container image | Yes. Amend PRD name line |
-| D3 | `serve` binds `127.0.0.1` by default, no auth (no public instance per PRD OQ3) | Yes |
+| D1 | Add **reviewer-supplied SBOM/VEX** (URL or upload) as a High-tier input; discovery alone will rarely find an SBOM | **Accepted.** PRD Story 1 amended |
+| D2 | Drop the npm package; ship GoReleaser binaries + container image | **Accepted.** PRD name line amended |
+| D3 | `serve` binds `127.0.0.1` by default, no auth (no public instance per PRD OQ3) | **Accepted** |
 
 ## Deviations from the default stack
 

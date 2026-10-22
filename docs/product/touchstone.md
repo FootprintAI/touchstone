@@ -4,8 +4,8 @@
 **Status:** draft
 **Owner:** hsinatfootprintai
 **Issues (P0):** Story 1 → #1 · Story 2 → #2 · Story 3 → #3 · Story 4 → #4 · Story 5 → #5 (filed 2026-10-22)
-**Design:** `docs/architecture/touchstone.md` (2026-10-22, proposed)
-**Name:** Touchstone. Repo `FootprintAI/touchstone`, CLI `touchstone`, npm `@footprintai/touchstone` (the unscoped npm name is taken)
+**Design:** `docs/architecture/touchstone.md` (2026-10-22, accepted)
+**Name:** Touchstone. Repo `FootprintAI/touchstone`, CLI `touchstone`, shipped as release binaries and a container image (no npm package, decision D2 in the design)
 **Repo split:** standalone OSS project (Apache 2.0, proposed). Bundling with
 the Containarium coding agent is Phase 2 (see "Later phases"). Litmus: a
 single security reviewer with a laptop wants this with no platform at all,
@@ -86,18 +86,24 @@ identifies itself with a descriptive `User-Agent`.
 ### Story 1 — Discover published evidence (P0, #1)
 
 **Story:** As a vendor-risk reviewer, I want the tool to find any SBOM,
-VEX or source-repo link the vendor publishes so that findings rest on the
-vendor's own declarations wherever possible.
+VEX or source-repo link the vendor publishes, and to use an SBOM/VEX the
+vendor already gave me, so that findings rest on the vendor's own
+declarations wherever possible.
 **Acceptance criteria:**
-- [ ] Given a URL, the tool checks `/.well-known/security.txt`, the
-      SBOM-discovery locations listed in the design doc, HTML `<link>`/`<meta>`
-      tags, and repo links on the page, and records every location it
-      checked and the result (found / not found / error)
+- [ ] Given a URL, the tool checks `/.well-known/security.txt` (and any
+      `CSAF:` field in it), `/.well-known/csaf/provider-metadata.json`,
+      `/.well-known/tea` (recorded only, not queried: querying needs a
+      vendor-assigned TEI), and repo links on the page, and records every
+      location it checked and the result (found / not found / error)
+- [ ] The reviewer can supply an SBOM or VEX document by URL or file
+      upload (CLI and web). It is parsed like a discovered one, rated High
+      confidence, and its evidence says "supplied by reviewer"
+      (added 2026-10-22, design decision D1)
 - [ ] A CycloneDX 1.5+ JSON or SPDX 2.3 JSON SBOM found at any of those
       locations is parsed. A fixture site serving a known SBOM yields
       exactly the components in the fixture
-- [ ] A VEX document (CycloneDX VEX or OpenVEX) found alongside it is
-      parsed and attached to the matching components
+- [ ] A VEX document (CycloneDX VEX, OpenVEX or CSAF 2.0 VEX) found
+      alongside it is parsed and attached to the matching components
 - [ ] The total number of requests per scan is capped (default 50,
       configurable) and is shown in the report
 
@@ -224,14 +230,14 @@ scan.
   the passive-only rule and the report disclaimer
 
 **Open questions (defaults in brackets):**
-1. **SBOM discovery standard:** which discovery locations count? The IETF
-   SBOM-access draft and CISA's SBOM-sharing work were cited from memory
-   and their current status is unverified. [Check in `/architect-design`.
-   MVP supports whatever is standardized plus `security.txt` pointers]
-2. **Engine language:** Go or TypeScript (Retire.js signatures are JS)?
-   [Decide in `/architect-design`]
-3. **Hosted web page:** do we run a public instance, given that it makes
-   outbound requests on users' behalf (abuse vector)? [No public instance
-   in MVP. Self-host and CLI only, hosted comes with Phase 2]
+1. ~~SBOM discovery standard~~ Resolved 2026-10-22 in the design: RFC 9472
+   targets devices, not websites, and isn't used. MVP uses security.txt +
+   CSAF provider metadata, records `/.well-known/tea`, and accepts a
+   reviewer-supplied SBOM/VEX (Story 1). High tier will often be empty
+   from discovery alone, which sharpens A2
+2. ~~Engine language~~ Resolved 2026-10-22: Go for the engine, CLI and
+   server; TypeScript for the web page only
+3. ~~Hosted web page~~ Resolved 2026-10-22: no public instance in MVP.
+   `serve` binds `127.0.0.1` by default, no auth (design decision D3)
 4. ~~Repo home~~ Resolved 2026-10-22: standalone public repo `FootprintAI/touchstone`
 5. ~~Project name~~ Resolved 2026-10-22: Touchstone
