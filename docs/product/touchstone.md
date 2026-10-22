@@ -4,6 +4,7 @@
 **Status:** draft
 **Owner:** hsinatfootprintai
 **Issues (P0):** Story 1 → #1 · Story 2 → #2 · Story 3 → #3 · Story 4 → #4 · Story 5 → #5 (filed 2026-10-22)
+**Design:** `docs/architecture/touchstone.md` (2026-10-22, proposed)
 **Name:** Touchstone. Repo `FootprintAI/touchstone`, CLI `touchstone`, npm `@footprintai/touchstone` (the unscoped npm name is taken)
 **Repo split:** standalone OSS project (Apache 2.0, proposed). Bundling with
 the Containarium coding agent is Phase 2 (see "Later phases"). Litmus: a
