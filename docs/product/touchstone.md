@@ -3,6 +3,7 @@
 **Date:** 2026-10-22
 **Status:** draft
 **Owner:** hsinatfootprintai
+**Issues (P0):** Story 1 → #1 · Story 2 → #2 · Story 3 → #3 · Story 4 → #4 · Story 5 → #5 (filed 2026-10-22)
 **Name:** Touchstone. Repo `FootprintAI/touchstone`, CLI `touchstone`, npm `@footprintai/touchstone` (the unscoped npm name is taken)
 **Repo split:** standalone OSS project (Apache 2.0, proposed). Bundling with
 the Containarium coding agent is Phase 2 (see "Later phases"). Litmus: a
@@ -81,7 +82,7 @@ paths (`/.well-known/security.txt`, SBOM discovery locations). It never
 sends exploit or CVE-test payloads, never brute-forces paths, and
 identifies itself with a descriptive `User-Agent`.
 
-### Story 1 — Discover published evidence (P0)
+### Story 1 — Discover published evidence (P0, #1)
 
 **Story:** As a vendor-risk reviewer, I want the tool to find any SBOM,
 VEX or source-repo link the vendor publishes so that findings rest on the
@@ -99,7 +100,7 @@ vendor's own declarations wherever possible.
 - [ ] The total number of requests per scan is capped (default 50,
       configurable) and is shown in the report
 
-### Story 2 — Match components to CVEs, honoring VEX (P0)
+### Story 2 — Match components to CVEs, honoring VEX (P0, #2)
 
 **Story:** As a reviewer, I want each detected component matched to known
 CVEs, minus the ones the vendor has declared not affected, so that the list
@@ -115,7 +116,7 @@ reflects real exposure.
 - [ ] With the CVE sources unreachable, the scan completes and the report
       says which source failed. It never shows "0 CVEs" as if clean
 
-### Story 3 — Scan a linked or supplied source repo (P0)
+### Story 3 — Scan a linked or supplied source repo (P0, #3)
 
 **Story:** As a reviewer of an open-source-based vendor, I want the tool to
 scan the vendor's public repo when no SBOM is published, so that I still
@@ -130,7 +131,7 @@ get declared dependencies rather than guesses.
 - [ ] A repo with no lockfile reports "no lockfile, dependencies not
       resolvable" rather than guessing versions from manifest ranges
 
-### Story 4 — Passive fingerprint fallback (P0)
+### Story 4 — Passive fingerprint fallback (P0, #4)
 
 **Story:** As a reviewer of a vendor that publishes nothing, I want a
 best-effort fingerprint of the site so that I get some signal, clearly
@@ -146,7 +147,7 @@ marked as inferred.
 - [ ] Against the labelled corpus, the request log shows no requests
       beyond the page load set and the Story 1 discovery paths
 
-### Story 5 — Report and export (P0)
+### Story 5 — Report and export (P0, #5)
 
 **Story:** As a reviewer, I want one report I can read in the browser and
 attach to a vendor ticket so that the finding is shareable and citable.
@@ -231,6 +232,5 @@ scan.
 3. **Hosted web page:** do we run a public instance, given that it makes
    outbound requests on users' behalf (abuse vector)? [No public instance
    in MVP. Self-host and CLI only, hosted comes with Phase 2]
-4. **Repo home:** new `FootprintAI/touchstone` repo, or a pack inside
-   Containarium? [New standalone repo, so the OSS project stands alone]
+4. ~~Repo home~~ Resolved 2026-10-22: standalone public repo `FootprintAI/touchstone`
 5. ~~Project name~~ Resolved 2026-10-22: Touchstone
