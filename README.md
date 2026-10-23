@@ -20,6 +20,16 @@ It never sends exploit or CVE-test payloads.
 **Status:** planning. Nothing is implemented yet. See the PRD at
 [`docs/product/touchstone.md`](docs/product/touchstone.md).
 Terms are defined in the [glossary](docs/glossary.md).
+**Status:** S0 (contract first). `go run ./cmd/touchstone scan https://example.com`
+prints a canned `ScanReport` from a stub service; it validates against
+[`schema/scan-report.v1.json`](schema/scan-report.v1.json). The API contract
+lives in [`proto/touchstone/v1/scan.proto`](proto/touchstone/v1/scan.proto);
+run `make generate` (requires [buf](https://buf.build)) to regenerate the Go,
+TypeScript, OpenAPI and JSON Schema outputs under `gen/`, `web/src/gen/`,
+`openapi/` and `schema/`. Generated code is committed and CI fails if it is
+stale. `make test` and `make web-test` run the Go and web suites. See the design at
+[`docs/architecture/touchstone.md`](docs/architecture/touchstone.md) and
+the PRD at [`docs/product/touchstone.md`](docs/product/touchstone.md).
 
 ## License
 
