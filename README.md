@@ -19,6 +19,7 @@ It never sends exploit or CVE-test payloads.
 
 **Status:** planning. Nothing is implemented yet. See the PRD at
 [`docs/product/touchstone.md`](docs/product/touchstone.md).
+Terms are defined in the [glossary](docs/glossary.md).
 
 ## License
 
