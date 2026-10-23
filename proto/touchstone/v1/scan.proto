@@ -1,0 +1,90 @@
+syntax = "proto3";
+package touchstone.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/FootprintAI/touchstone/gen/go/touchstone/v1;touchstonev1";
+
+service ScanService {
+  rpc Scan(ScanRequest) returns (ScanReport) {
+    option (google.api.http) = { post: "/v1/scans" body: "*" };
+  }
+}
+
+message ScanRequest {
+  string url = 1;                 // required, http(s)
+  string repo_url = 2;            // optional, user-supplied repo (#3)
+  string sbom_url = 3;            // optional, user-supplied SBOM/VEX (D1)
+  bytes  sbom_document = 4;       // optional, uploaded SBOM/VEX (D1)
+  uint32 request_budget = 5;      // 0 = default 50, max 200
+}
+
+enum Confidence { CONFIDENCE_UNSPECIFIED = 0; CONFIDENCE_LOW = 1; CONFIDENCE_MEDIUM = 2; CONFIDENCE_HIGH = 3; }
+enum EvidenceKind {
+  EVIDENCE_KIND_UNSPECIFIED = 0; EVIDENCE_KIND_SBOM_PUBLISHED = 1; EVIDENCE_KIND_SBOM_SUPPLIED = 2;
+  EVIDENCE_KIND_VEX = 3; EVIDENCE_KIND_REPO_LOCKFILE = 4; EVIDENCE_KIND_FINGERPRINT_ASSET = 5;
+  EVIDENCE_KIND_FINGERPRINT_HEADER = 6;
+}
+enum VexStatus { VEX_STATUS_UNSPECIFIED = 0; VEX_STATUS_AFFECTED = 1; VEX_STATUS_NOT_AFFECTED = 2; VEX_STATUS_FIXED = 3; VEX_STATUS_UNDER_INVESTIGATION = 4; }
+enum ScanStatus { SCAN_STATUS_UNSPECIFIED = 0; SCAN_STATUS_OK = 1; SCAN_STATUS_TARGET_UNREACHABLE = 2; }
+enum LookupStatus { LOOKUP_STATUS_UNSPECIFIED = 0; LOOKUP_STATUS_COMPLETE = 1; LOOKUP_STATUS_PARTIAL = 2; LOOKUP_STATUS_FAILED = 3; }
+
+message Evidence {
+  EvidenceKind kind = 1;
+  string location = 2;            // URL, or repo@ref:path for lockfiles
+  string detail = 3;               // matched string or header value
+}
+
+message Vulnerability {
+  string id = 1;                  // CVE id when one exists, else OSV id
+  repeated string aliases = 2;
+  string summary = 3;
+  bool   kev = 4;
+  optional double epss = 5;       // absent = no EPSS data
+  optional double cvss_base = 6;
+  VexStatus vex_status = 7;
+  string vex_justification = 8;
+  bool   suppressed = 9;          // true for NOT_AFFECTED / FIXED
+}
+
+message Component {
+  string name = 1;
+  string version = 2;
+  string purl = 3;
+  string cpe = 4;
+  Confidence confidence = 5;
+  repeated Evidence evidence = 6;
+  repeated string caveats = 7;    // e.g. MAY_BE_BACKPORTED, DEFAULT_BRANCH_NOT_RELEASE
+  repeated Vulnerability vulnerabilities = 8;  // ranked
+}
+
+message Conflict { string component_key = 1; repeated string versions = 2; repeated Evidence evidence = 3; }
+
+message CheckedLocation {
+  string url = 1;
+  string reason = 2;              // TARGET | SUBRESOURCE | DISCOVERY_PATH | DECLARED | FORGE_API
+  enum Result { RESULT_UNSPECIFIED = 0; RESULT_FOUND = 1; RESULT_NOT_FOUND = 2; RESULT_ERROR = 3; RESULT_REFUSED = 4; }
+  Result result = 3;
+  string error = 4;
+}
+
+message SourceStatus { string source = 1; bool ok = 2; string error = 3; }
+
+message ScanReport {
+  string schema_version = 1;      // "1"; bumped only with a new proto package
+  string target_url = 2;
+  ScanStatus scan_status = 3;
+  LookupStatus lookup_status = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp completed_at = 6;
+  string tool_version = 7;
+  google.protobuf.Timestamp vuln_data_as_of = 8;
+  repeated Component components = 9;
+  repeated Conflict conflicts = 10;
+  repeated CheckedLocation checked = 11;
+  uint32 requests_used = 12;
+  uint32 request_budget = 13;
+  repeated SourceStatus sources = 14;
+  string disclaimer = 15;
+}

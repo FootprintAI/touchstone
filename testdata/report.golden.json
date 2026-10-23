@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1",
+  "targetUrl": "https://example.com",
+  "scanStatus": "SCAN_STATUS_OK",
+  "lookupStatus": "LOOKUP_STATUS_COMPLETE",
+  "startedAt": "2026-10-22T00:00:00Z",
+  "completedAt": "2026-10-22T00:00:00Z",
+  "toolVersion": "0.0.0-dev",
+  "vulnDataAsOf": "2026-10-22T00:00:00Z",
+  "components": [
+    {
+      "name": "jquery",
+      "version": "1.12.4",
+      "purl": "pkg:npm/jquery@1.12.4",
+      "confidence": "CONFIDENCE_LOW",
+      "evidence": [
+        {
+          "kind": "EVIDENCE_KIND_FINGERPRINT_ASSET",
+          "location": "https://example.com",
+          "detail": "jquery-1.12.4.min.js"
+        }
+      ],
+      "caveats": [
+        "CANNED_STUB_REPORT"
+      ],
+      "vulnerabilities": [
+        {
+          "id": "CVE-2020-11022",
+          "aliases": [
+            "GHSA-gxr4-xjj5-5px2"
+          ],
+          "summary": "Potential XSS vulnerability in jQuery.htmlPrefilter",
+          "epss": 0.0123,
+          "cvssBase": 6.1
+        }
+      ]
+    }
+  ],
+  "requestBudget": 50,
+  "sources": [
+    {
+      "source": "stub",
+      "ok": true
+    }
+  ],
+  "disclaimer": "Touchstone reports publicly observable evidence only. Findings are graded by confidence and are not proof that a vulnerability is exploitable."
+}
