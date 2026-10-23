@@ -11,6 +11,7 @@ import (
 	"time"
 
 	touchstonev1 "github.com/FootprintAI/touchstone/gen/go/touchstone/v1"
+	"github.com/FootprintAI/touchstone/internal/fetch"
 	"github.com/FootprintAI/touchstone/internal/service"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -24,13 +25,35 @@ var (
 	goldenPath = filepath.Join("..", "..", "testdata", "report.golden.json")
 )
 
-func fixedStub() *service.Stub {
+func fixedStub(fetch.Options) touchstonev1.ScanServiceServer {
 	return &service.Stub{Now: func() time.Time { return time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC) }}
+}
+
+func TestScanAllowPrivateFlag(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		want bool
+	}{
+		{[]string{"scan", "http://127.0.0.1:8080"}, false},
+		{[]string{"scan", "--allow-private", "http://127.0.0.1:8080"}, true},
+	} {
+		var got *fetch.Options
+		newSvc := func(o fetch.Options) touchstonev1.ScanServiceServer {
+			got = &o
+			return fixedStub(o)
+		}
+		if err := run(context.Background(), tt.args, &bytes.Buffer{}, newSvc); err != nil {
+			t.Fatalf("run(%q): %v", tt.args, err)
+		}
+		if got == nil || got.AllowPrivate != tt.want {
+			t.Errorf("run(%q): fetch options %+v, want AllowPrivate=%v", tt.args, got, tt.want)
+		}
+	}
 }
 
 func TestScanPrintsReportValidAgainstSchema(t *testing.T) {
 	var out bytes.Buffer
-	if err := run(context.Background(), []string{"scan", "https://example.com"}, &out, fixedStub()); err != nil {
+	if err := run(context.Background(), []string{"scan", "https://example.com"}, &out, fixedStub); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
@@ -86,8 +109,11 @@ func TestScanPrintsReportValidAgainstSchema(t *testing.T) {
 }
 
 func TestScanRejectsBadArgs(t *testing.T) {
-	for _, args := range [][]string{nil, {"scan"}, {"serve", "https://example.com"}, {"scan", "ftp://example.com"}, {"scan", "example.com"}} {
-		if err := run(context.Background(), args, &bytes.Buffer{}, fixedStub()); err == nil {
+	for _, args := range [][]string{
+		nil, {"scan"}, {"serve", "https://example.com"}, {"scan", "ftp://example.com"}, {"scan", "example.com"},
+		{"scan", "--allow-private"}, {"scan", "--no-such-flag", "https://example.com"}, {"scan", "https://a.example", "https://b.example"},
+	} {
+		if err := run(context.Background(), args, &bytes.Buffer{}, fixedStub); err == nil {
 			t.Errorf("run(%q) = nil error, want error", args)
 		}
 	}
