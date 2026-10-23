@@ -197,18 +197,31 @@ the CLI's JSON output, the REST API, the web page's types and the Phase 2
 agent integration. `buf generate` produces:
 
 - Go: `protoc-gen-go`, `protoc-gen-go-grpc`, `protoc-gen-grpc-gateway`
-- TypeScript: `protoc-gen-es` (protobuf-es v2). The web page decodes
-  responses with `fromJson(ScanReportSchema, body)`, the generated parser,
-  so no `as ScanReport` casts exist
-- `protoc-gen-openapiv2` → `openapi/touchstone.v1.json`, published for
-  third parties
-- JSON Schema of `ScanReport` (Buf's `protoschema-jsonschema` plugin) →
-  `schema/scan-report.v1.json`: the "published, versioned schema" from
-  Story #5
+- TypeScript: `protoc-gen-es` (protobuf-es v2) → `web/src/gen/`. The web
+  page decodes responses with `fromJson(ScanReportSchema, body)`, the
+  generated parser, so no `as ScanReport` casts exist. `include_imports`
+  also generates `web/src/gen/google/api/*_pb.ts`, which `scan_pb.ts`
+  imports for the HTTP annotation (well-known types come from
+  `@bufbuild/protobuf/wkt`)
+- `protoc-gen-openapiv2` → `openapi/touchstone_v1.swagger.json`
+  (`merge_file_name=touchstone_v1`; the plugin appends `.swagger.json`),
+  published for third parties
+- JSON Schema of `ScanReport` (Buf's `protoschema-jsonschema` plugin,
+  `json-bundle` target) → `schema/scan-report.v1.json`: the "published,
+  versioned schema" from Story #5. The plugin names its output after the
+  message, so `make generate` renames
+  `schema/touchstone.v1.ScanReport.jsonschema.bundle.json` to that stable
+  name. The bundles for the messages `ScanReport` references
+  (`schema/touchstone.v1.<Message>.jsonschema.bundle.json`) are also
+  committed generated outputs
 
-Generated code lives in `gen/` and `web/src/gen/`, is committed, and is
-never edited by hand; CI fails if `buf generate` produces a diff.
-`buf lint` and `buf breaking --against main` gate every PR.
+**Reproducible generation.** `make generate` wraps `buf generate` plus the
+schema rename above; run it rather than `buf generate` alone. The plugins
+are remote buf plugins with pinned versions (`buf.gen.yaml`), `clean: true`
+wipes each output directory before writing, and `buf.lock` pins
+googleapis (`buf dep update` to bump it). Generated code lives in `gen/`,
+`web/src/gen/`, `openapi/` and `schema/`, is committed, and is never edited
+by hand; CI fails if `make generate` produces a diff.
 
 ```proto
 syntax = "proto3";
@@ -329,6 +342,23 @@ CI gate on every PR: `go vet`, `staticcheck`, `go test ./...`, `buf lint`,
 `buf breaking`, generated-code check, `tsc --noEmit`, `vitest run`,
 `next build`, image build. The compose e2e runs on PRs touching
 `fetch`, `pipeline`, `cmd/` or `web/`, and nightly.
+
+What runs today (`.github/workflows/ci.yml`, on every PR and on pushes to
+`main`):
+
+- job `go`: `go vet ./...`, `staticcheck`, `go test ./...`
+- job `proto`: `buf lint`; `buf breaking` against `origin/main` when `main`
+  has a `buf.lock` (it now does, so the check is live); the generated-code
+  check (`make generate`, then fail on any diff under `gen/`,
+  `web/src/gen/`, `openapi/` and `schema/`)
+- job `web`: `npm install --no-package-lock`, `tsc --noEmit`, `vitest run`
+
+Not yet in CI: `next build` arrives with S9 and the image build with S10,
+as does the compose e2e.
+
+**Known follow-up:** there is no `web/package-lock.json` yet, so CI runs
+`npm install --no-package-lock` against the exact versions pinned in
+`web/package.json`. Commit a lockfile and switch CI to `npm ci`.
 
 **Precision metric (PRD metric 1):** not a unit test. A separate
 `accuracy/` harness runs the CLI over the hand-labelled 30-site corpus
