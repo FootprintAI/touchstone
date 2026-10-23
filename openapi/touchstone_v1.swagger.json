@@ -1,0 +1,396 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "touchstone/v1/scan.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "ScanService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/scans": {
+      "post": {
+        "operationId": "ScanService_Scan",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ScanReport"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ScanRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ScanService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "CheckedLocationResult": {
+      "type": "string",
+      "enum": [
+        "RESULT_UNSPECIFIED",
+        "RESULT_FOUND",
+        "RESULT_NOT_FOUND",
+        "RESULT_ERROR",
+        "RESULT_REFUSED"
+      ],
+      "default": "RESULT_UNSPECIFIED"
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1CheckedLocation": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string",
+          "title": "TARGET | SUBRESOURCE | DISCOVERY_PATH | DECLARED | FORGE_API"
+        },
+        "result": {
+          "$ref": "#/definitions/CheckedLocationResult"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Component": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "purl": {
+          "type": "string"
+        },
+        "cpe": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/definitions/v1Confidence"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Evidence"
+          }
+        },
+        "caveats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "e.g. MAY_BE_BACKPORTED, DEFAULT_BRANCH_NOT_RELEASE"
+        },
+        "vulnerabilities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Vulnerability"
+          },
+          "title": "ranked"
+        }
+      }
+    },
+    "v1Confidence": {
+      "type": "string",
+      "enum": [
+        "CONFIDENCE_UNSPECIFIED",
+        "CONFIDENCE_LOW",
+        "CONFIDENCE_MEDIUM",
+        "CONFIDENCE_HIGH"
+      ],
+      "default": "CONFIDENCE_UNSPECIFIED"
+    },
+    "v1Conflict": {
+      "type": "object",
+      "properties": {
+        "componentKey": {
+          "type": "string"
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Evidence"
+          }
+        }
+      }
+    },
+    "v1Evidence": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/v1EvidenceKind"
+        },
+        "location": {
+          "type": "string",
+          "title": "URL, or repo@ref:path for lockfiles"
+        },
+        "detail": {
+          "type": "string",
+          "title": "matched string or header value"
+        }
+      }
+    },
+    "v1EvidenceKind": {
+      "type": "string",
+      "enum": [
+        "EVIDENCE_KIND_UNSPECIFIED",
+        "EVIDENCE_KIND_SBOM_PUBLISHED",
+        "EVIDENCE_KIND_SBOM_SUPPLIED",
+        "EVIDENCE_KIND_VEX",
+        "EVIDENCE_KIND_REPO_LOCKFILE",
+        "EVIDENCE_KIND_FINGERPRINT_ASSET",
+        "EVIDENCE_KIND_FINGERPRINT_HEADER"
+      ],
+      "default": "EVIDENCE_KIND_UNSPECIFIED"
+    },
+    "v1LookupStatus": {
+      "type": "string",
+      "enum": [
+        "LOOKUP_STATUS_UNSPECIFIED",
+        "LOOKUP_STATUS_COMPLETE",
+        "LOOKUP_STATUS_PARTIAL",
+        "LOOKUP_STATUS_FAILED"
+      ],
+      "default": "LOOKUP_STATUS_UNSPECIFIED"
+    },
+    "v1ScanReport": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "title": "\"1\"; bumped only with a new proto package"
+        },
+        "targetUrl": {
+          "type": "string"
+        },
+        "scanStatus": {
+          "$ref": "#/definitions/v1ScanStatus"
+        },
+        "lookupStatus": {
+          "$ref": "#/definitions/v1LookupStatus"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "toolVersion": {
+          "type": "string"
+        },
+        "vulnDataAsOf": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Component"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Conflict"
+          }
+        },
+        "checked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CheckedLocation"
+          }
+        },
+        "requestsUsed": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "requestBudget": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SourceStatus"
+          }
+        },
+        "disclaimer": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ScanRequest": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "title": "required, http(s)"
+        },
+        "repoUrl": {
+          "type": "string",
+          "title": "optional, user-supplied repo (#3)"
+        },
+        "sbomUrl": {
+          "type": "string",
+          "title": "optional, user-supplied SBOM/VEX (D1)"
+        },
+        "sbomDocument": {
+          "type": "string",
+          "format": "byte",
+          "title": "optional, uploaded SBOM/VEX (D1)"
+        },
+        "requestBudget": {
+          "type": "integer",
+          "format": "int64",
+          "title": "0 = default 50, max 200"
+        }
+      }
+    },
+    "v1ScanStatus": {
+      "type": "string",
+      "enum": [
+        "SCAN_STATUS_UNSPECIFIED",
+        "SCAN_STATUS_OK",
+        "SCAN_STATUS_TARGET_UNREACHABLE"
+      ],
+      "default": "SCAN_STATUS_UNSPECIFIED"
+    },
+    "v1SourceStatus": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "v1VexStatus": {
+      "type": "string",
+      "enum": [
+        "VEX_STATUS_UNSPECIFIED",
+        "VEX_STATUS_AFFECTED",
+        "VEX_STATUS_NOT_AFFECTED",
+        "VEX_STATUS_FIXED",
+        "VEX_STATUS_UNDER_INVESTIGATION"
+      ],
+      "default": "VEX_STATUS_UNSPECIFIED"
+    },
+    "v1Vulnerability": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "CVE id when one exists, else OSV id"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "summary": {
+          "type": "string"
+        },
+        "kev": {
+          "type": "boolean"
+        },
+        "epss": {
+          "type": "number",
+          "format": "double",
+          "title": "absent = no EPSS data"
+        },
+        "cvssBase": {
+          "type": "number",
+          "format": "double"
+        },
+        "vexStatus": {
+          "$ref": "#/definitions/v1VexStatus"
+        },
+        "vexJustification": {
+          "type": "string"
+        },
+        "suppressed": {
+          "type": "boolean",
+          "title": "true for NOT_AFFECTED / FIXED"
+        }
+      }
+    }
+  }
+}

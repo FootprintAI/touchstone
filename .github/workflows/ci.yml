@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 ./...
+      - run: go test ./...
+
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+          version: 1.75.0
+      - run: buf lint
+      - name: buf breaking
+        run: |
+          if git cat-file -e origin/main:buf.lock 2>/dev/null; then
+            buf breaking --against '.git#branch=origin/main'
+          else
+            echo "main has no buf module yet; nothing to compare against"
+          fi
+      - name: generated code is current
+        run: |
+          make generate
+          git add -A gen web/src/gen openapi schema
+          git diff --cached --exit-code -- gen web/src/gen openapi schema
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # package.json pins exact versions; no lockfile is committed yet.
+      - run: npm install --no-package-lock
+      - run: npx tsc --noEmit
+      - run: npx vitest run

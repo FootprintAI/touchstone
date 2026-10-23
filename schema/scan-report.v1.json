@@ -1,0 +1,582 @@
+{
+  "$defs": {
+    "google.protobuf.Timestamp.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "touchstone.v1.CheckedLocation.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "default": "",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "type": "string"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "pattern": "^RESULT_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "RESULT_FOUND",
+                "RESULT_NOT_FOUND",
+                "RESULT_ERROR",
+                "RESULT_REFUSED"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Result"
+        },
+        "url": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "title": "Checked Location",
+      "type": "object"
+    },
+    "touchstone.v1.Component.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "caveats": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "pattern": "^CONFIDENCE_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "CONFIDENCE_LOW",
+                "CONFIDENCE_MEDIUM",
+                "CONFIDENCE_HIGH"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Confidence"
+        },
+        "cpe": {
+          "default": "",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/touchstone.v1.Evidence.jsonschema.json"
+          },
+          "type": "array"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "purl": {
+          "default": "",
+          "type": "string"
+        },
+        "version": {
+          "default": "",
+          "type": "string"
+        },
+        "vulnerabilities": {
+          "items": {
+            "$ref": "#/$defs/touchstone.v1.Vulnerability.jsonschema.json"
+          },
+          "type": "array"
+        }
+      },
+      "title": "Component",
+      "type": "object"
+    },
+    "touchstone.v1.Conflict.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(component_key)$": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "componentKey": {
+          "default": "",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/touchstone.v1.Evidence.jsonschema.json"
+          },
+          "type": "array"
+        },
+        "versions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "title": "Conflict",
+      "type": "object"
+    },
+    "touchstone.v1.Evidence.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "pattern": "^EVIDENCE_KIND_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "EVIDENCE_KIND_SBOM_PUBLISHED",
+                "EVIDENCE_KIND_SBOM_SUPPLIED",
+                "EVIDENCE_KIND_VEX",
+                "EVIDENCE_KIND_REPO_LOCKFILE",
+                "EVIDENCE_KIND_FINGERPRINT_ASSET",
+                "EVIDENCE_KIND_FINGERPRINT_HEADER"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Evidence Kind"
+        },
+        "location": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "title": "Evidence",
+      "type": "object"
+    },
+    "touchstone.v1.ScanReport.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(completed_at)$": {
+          "$ref": "#/$defs/google.protobuf.Timestamp.jsonschema.json"
+        },
+        "^(lookup_status)$": {
+          "anyOf": [
+            {
+              "pattern": "^LOOKUP_STATUS_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "LOOKUP_STATUS_COMPLETE",
+                "LOOKUP_STATUS_PARTIAL",
+                "LOOKUP_STATUS_FAILED"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Lookup Status"
+        },
+        "^(request_budget)$": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            }
+          ],
+          "default": 0
+        },
+        "^(requests_used)$": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            }
+          ],
+          "default": 0
+        },
+        "^(scan_status)$": {
+          "anyOf": [
+            {
+              "pattern": "^SCAN_STATUS_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "SCAN_STATUS_OK",
+                "SCAN_STATUS_TARGET_UNREACHABLE"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Scan Status"
+        },
+        "^(schema_version)$": {
+          "default": "",
+          "type": "string"
+        },
+        "^(started_at)$": {
+          "$ref": "#/$defs/google.protobuf.Timestamp.jsonschema.json"
+        },
+        "^(target_url)$": {
+          "default": "",
+          "type": "string"
+        },
+        "^(tool_version)$": {
+          "default": "",
+          "type": "string"
+        },
+        "^(vuln_data_as_of)$": {
+          "$ref": "#/$defs/google.protobuf.Timestamp.jsonschema.json"
+        }
+      },
+      "properties": {
+        "checked": {
+          "items": {
+            "$ref": "#/$defs/touchstone.v1.CheckedLocation.jsonschema.json"
+          },
+          "type": "array"
+        },
+        "completedAt": {
+          "$ref": "#/$defs/google.protobuf.Timestamp.jsonschema.json"
+        },
+        "components": {
+          "items": {
+            "$ref": "#/$defs/touchstone.v1.Component.jsonschema.json"
+          },
+          "type": "array"
+        },
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/touchstone.v1.Conflict.jsonschema.json"
+          },
+          "type": "array"
+        },
+        "disclaimer": {
+          "default": "",
+          "type": "string"
+        },
+        "lookupStatus": {
+          "anyOf": [
+            {
+              "pattern": "^LOOKUP_STATUS_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "LOOKUP_STATUS_COMPLETE",
+                "LOOKUP_STATUS_PARTIAL",
+                "LOOKUP_STATUS_FAILED"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Lookup Status"
+        },
+        "requestBudget": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            }
+          ],
+          "default": 0
+        },
+        "requestsUsed": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            }
+          ],
+          "default": 0
+        },
+        "scanStatus": {
+          "anyOf": [
+            {
+              "pattern": "^SCAN_STATUS_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "SCAN_STATUS_OK",
+                "SCAN_STATUS_TARGET_UNREACHABLE"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Scan Status"
+        },
+        "schemaVersion": {
+          "default": "",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/touchstone.v1.SourceStatus.jsonschema.json"
+          },
+          "type": "array"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/google.protobuf.Timestamp.jsonschema.json"
+        },
+        "targetUrl": {
+          "default": "",
+          "type": "string"
+        },
+        "toolVersion": {
+          "default": "",
+          "type": "string"
+        },
+        "vulnDataAsOf": {
+          "$ref": "#/$defs/google.protobuf.Timestamp.jsonschema.json"
+        }
+      },
+      "title": "Scan Report",
+      "type": "object"
+    },
+    "touchstone.v1.SourceStatus.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "default": "",
+          "type": "string"
+        },
+        "ok": {
+          "default": false,
+          "type": "boolean"
+        },
+        "source": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "title": "Source Status",
+      "type": "object"
+    },
+    "touchstone.v1.Vulnerability.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(cvss_base)$": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "enum": [
+                "Infinity",
+                "-Infinity",
+                "NaN"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "^(vex_justification)$": {
+          "default": "",
+          "type": "string"
+        },
+        "^(vex_status)$": {
+          "anyOf": [
+            {
+              "pattern": "^VEX_STATUS_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "VEX_STATUS_AFFECTED",
+                "VEX_STATUS_NOT_AFFECTED",
+                "VEX_STATUS_FIXED",
+                "VEX_STATUS_UNDER_INVESTIGATION"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Vex Status"
+        }
+      },
+      "properties": {
+        "aliases": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cvssBase": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "enum": [
+                "Infinity",
+                "-Infinity",
+                "NaN"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "epss": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "enum": [
+                "Infinity",
+                "-Infinity",
+                "NaN"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "id": {
+          "default": "",
+          "type": "string"
+        },
+        "kev": {
+          "default": false,
+          "type": "boolean"
+        },
+        "summary": {
+          "default": "",
+          "type": "string"
+        },
+        "suppressed": {
+          "default": false,
+          "type": "boolean"
+        },
+        "vexJustification": {
+          "default": "",
+          "type": "string"
+        },
+        "vexStatus": {
+          "anyOf": [
+            {
+              "pattern": "^VEX_STATUS_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "VEX_STATUS_AFFECTED",
+                "VEX_STATUS_NOT_AFFECTED",
+                "VEX_STATUS_FIXED",
+                "VEX_STATUS_UNDER_INVESTIGATION"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Vex Status"
+        }
+      },
+      "title": "Vulnerability",
+      "type": "object"
+    }
+  },
+  "$id": "touchstone.v1.ScanReport.jsonschema.bundle.json",
+  "$ref": "#/$defs/touchstone.v1.ScanReport.jsonschema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,25 +1,41 @@
 # Regenerate with `make generate` (wraps `buf generate`). Output under
 # gen/, web/src/gen/, openapi/ and schema/ is committed and never hand
 # edited; CI fails if `buf generate` would change it
-# (.github/workflows/ci.yml, job "proto").
+# (.github/workflows/ci.yml, job "proto"). Plugin versions are pinned so
+# that check only fails on a real contract change; bump them together
+# with the matching Go and npm runtime versions.
 version: v2
+# Wipe each output directory first so a removed message can't leave a
+# stale file behind for the CI diff check to miss.
+clean: true
 plugins:
-  - remote: buf.build/protocolbuffers/go
+  - remote: buf.build/protocolbuffers/go:v1.36.12
     out: gen/go
     opt: paths=source_relative
-  - remote: buf.build/grpc/go
+  - remote: buf.build/grpc/go:v1.6.2
     out: gen/go
     opt: paths=source_relative
-  - remote: buf.build/grpc-ecosystem/gateway
+  - remote: buf.build/grpc-ecosystem/gateway:v2.32.0
     out: gen/go
     opt: paths=source_relative
-  - remote: buf.build/grpc-ecosystem/openapiv2
+  - remote: buf.build/grpc-ecosystem/openapiv2:v2.32.0
     out: openapi
     opt:
       - output_format=json
       - allow_merge=true
-      - merge_file_name=touchstone.v1
-  - remote: buf.build/bufbuild/es
+      - merge_file_name=touchstone_v1
+  # include_imports also generates google/api/*_pb.ts, which scan_pb.ts
+  # imports for the http annotation (well-known types come from
+  # @bufbuild/protobuf/wkt instead).
+  - remote: buf.build/bufbuild/es:v2.16.0
     out: web/src/gen
-  - remote: buf.build/bufbuild/protoschema-jsonschema
+    include_imports: true
+    opt: target=ts
+  # Only ScanReport and the messages it references get a schema;
+  # `make generate` renames ScanReport's bundle (which inlines the rest)
+  # to schema/scan-report.v1.json, the published schema.
+  - remote: buf.build/bufbuild/protoschema-jsonschema:v0.6.0
     out: schema
+    opt: target=json-bundle
+    types:
+      - touchstone.v1.ScanReport

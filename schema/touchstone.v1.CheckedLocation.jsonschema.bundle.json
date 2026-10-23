@@ -1,0 +1,51 @@
+{
+  "$defs": {
+    "touchstone.v1.CheckedLocation.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "default": "",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "type": "string"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "pattern": "^RESULT_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "RESULT_FOUND",
+                "RESULT_NOT_FOUND",
+                "RESULT_ERROR",
+                "RESULT_REFUSED"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Result"
+        },
+        "url": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "title": "Checked Location",
+      "type": "object"
+    }
+  },
+  "$id": "touchstone.v1.CheckedLocation.jsonschema.bundle.json",
+  "$ref": "#/$defs/touchstone.v1.CheckedLocation.jsonschema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

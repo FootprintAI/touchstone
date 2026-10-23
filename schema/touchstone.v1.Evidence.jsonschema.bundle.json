@@ -1,0 +1,49 @@
+{
+  "$defs": {
+    "touchstone.v1.Evidence.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "pattern": "^EVIDENCE_KIND_UNSPECIFIED$",
+              "type": "string"
+            },
+            {
+              "enum": [
+                "EVIDENCE_KIND_SBOM_PUBLISHED",
+                "EVIDENCE_KIND_SBOM_SUPPLIED",
+                "EVIDENCE_KIND_VEX",
+                "EVIDENCE_KIND_REPO_LOCKFILE",
+                "EVIDENCE_KIND_FINGERPRINT_ASSET",
+                "EVIDENCE_KIND_FINGERPRINT_HEADER"
+              ],
+              "type": "string"
+            },
+            {
+              "maximum": 2147483647,
+              "minimum": -2147483648,
+              "type": "integer"
+            }
+          ],
+          "default": 0,
+          "title": "Evidence Kind"
+        },
+        "location": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "title": "Evidence",
+      "type": "object"
+    }
+  },
+  "$id": "touchstone.v1.Evidence.jsonschema.bundle.json",
+  "$ref": "#/$defs/touchstone.v1.Evidence.jsonschema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,0 +1,27 @@
+{
+  "$defs": {
+    "touchstone.v1.SourceStatus.jsonschema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "default": "",
+          "type": "string"
+        },
+        "ok": {
+          "default": false,
+          "type": "boolean"
+        },
+        "source": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "title": "Source Status",
+      "type": "object"
+    }
+  },
+  "$id": "touchstone.v1.SourceStatus.jsonschema.bundle.json",
+  "$ref": "#/$defs/touchstone.v1.SourceStatus.jsonschema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
