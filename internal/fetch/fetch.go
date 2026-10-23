@@ -1,8 +1,6 @@
 // Package fetch defines the Fetcher seam: the one way any other package
-// is allowed to read bytes from a vendor site. The real implementation
-// (PassiveFetcher, see docs/architecture/touchstone.md) lands in slice
-// S1; this package only fixes the interface so S0 callers and their
-// tests can be written against it now.
+// is allowed to read bytes from a vendor site. PassiveFetcher is the real
+// implementation (see docs/architecture/touchstone.md); Fake is for tests.
 package fetch
 
 import "context"
