@@ -1,0 +1,13 @@
+{
+  "id": "GHSA-6c3j-c64m-qhgq",
+  "aliases": ["CVE-2019-11358"],
+  "summary": "jQuery prototype pollution in extend",
+  "affected": [
+    {
+      "package": {"ecosystem": "npm", "name": "jquery", "purl": "pkg:npm/jquery"},
+      "ranges": [
+        {"type": "ECOSYSTEM", "events": [{"introduced": "1.0.3"}, {"fixed": "3.4.0"}]}
+      ]
+    }
+  ]
+}
