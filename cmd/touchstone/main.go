@@ -1,7 +1,7 @@
 // Command touchstone scans a vendor URL and prints an evidence-graded
 // ScanReport as protojson (--format json, the default) or as Markdown
-// (--format md). In slice S0 the scan is served by the stub ScanService,
-// so the report is canned.
+// (--format md). The scan fetches the page and its scripts passively and
+// looks components up in OSV (slice S2).
 package main
 
 import (
@@ -16,6 +16,7 @@ import (
 	"github.com/FootprintAI/touchstone/internal/fetch"
 	"github.com/FootprintAI/touchstone/internal/report"
 	"github.com/FootprintAI/touchstone/internal/service"
+	"github.com/FootprintAI/touchstone/internal/vuln"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -27,7 +28,9 @@ const usage = "usage: touchstone scan [--allow-private] [--format json|md] <url>
 type newService func(fetch.Options) touchstonev1.ScanServiceServer
 
 func main() {
-	newSvc := func(fetch.Options) touchstonev1.ScanServiceServer { return &service.Stub{} }
+	newSvc := func(o fetch.Options) touchstonev1.ScanServiceServer {
+		return &service.Scanner{Fetch: o, Vulns: vuln.NewOSV()}
+	}
 	if err := run(context.Background(), os.Args[1:], os.Stdout, newSvc); err != nil {
 		fmt.Fprintln(os.Stderr, "touchstone:", err)
 		os.Exit(2)
