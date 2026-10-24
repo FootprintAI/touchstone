@@ -1,4 +1,4 @@
-.PHONY: generate lint breaking test web-test
+.PHONY: generate lint breaking test web-test web-build
 
 # Requires buf (https://buf.build): regenerates gen/, web/src/gen/,
 # openapi/ and schema/ from proto/touchstone/v1/scan.proto, using the
@@ -22,3 +22,8 @@ test:
 
 web-test:
 	cd web && npm install --no-package-lock && npx tsc --noEmit && npx vitest run
+
+# Exports the page to web/out, which web/embed.go embeds into touchstone serve.
+# Build it before `go build ./cmd/touchstone`.
+web-build:
+	cd web && npm install --no-package-lock && npx next build
