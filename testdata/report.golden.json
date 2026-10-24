@@ -43,5 +43,5 @@
       "ok": true
     }
   ],
-  "disclaimer": "Touchstone reports publicly observable evidence only. Findings are graded by confidence and are not proof that a vulnerability is exploitable."
+  "disclaimer": "Touchstone reports publicly observable evidence only. Findings are graded by confidence and are not proof that a vulnerability is exploitable. Low-confidence findings are inferred from passive fingerprints and are unverified."
 }

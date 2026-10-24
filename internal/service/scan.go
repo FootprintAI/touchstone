@@ -10,6 +10,7 @@ import (
 	"time"
 
 	touchstonev1 "github.com/FootprintAI/touchstone/gen/go/touchstone/v1"
+	"github.com/FootprintAI/touchstone/internal/report"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -18,9 +19,9 @@ import (
 // ToolVersion is reported in every ScanReport.
 const ToolVersion = "0.0.0-dev"
 
-// Disclaimer is reported in every ScanReport.
-const Disclaimer = "Touchstone reports publicly observable evidence only. " +
-	"Findings are graded by confidence and are not proof that a vulnerability is exploitable."
+// Disclaimer is reported in every ScanReport. It is defined by the report
+// package, which also prints it in every Markdown rendering.
+const Disclaimer = report.Disclaimer
 
 const defaultRequestBudget = 50
 

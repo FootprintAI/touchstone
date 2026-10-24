@@ -22,7 +22,10 @@ It never sends exploit or CVE-test payloads.
 Terms are defined in the [glossary](docs/glossary.md).
 **Status:** S0 (contract first). `go run ./cmd/touchstone scan https://example.com`
 prints a canned `ScanReport` from a stub service; it validates against
-[`schema/scan-report.v1.json`](schema/scan-report.v1.json). The API contract
+[`schema/scan-report.v1.json`](schema/scan-report.v1.json). Add `--format md`
+to get the same report as Markdown for a vendor-review ticket: every
+vendor string is escaped, and a report whose vulnerability lookup did not
+complete says "lookup incomplete" instead of showing a count. The API contract
 lives in [`proto/touchstone/v1/scan.proto`](proto/touchstone/v1/scan.proto);
 run `make generate` (requires [buf](https://buf.build)) to regenerate the Go,
 TypeScript, OpenAPI and JSON Schema outputs under `gen/`, `web/src/gen/`,

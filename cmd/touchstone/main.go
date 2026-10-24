@@ -1,6 +1,7 @@
 // Command touchstone scans a vendor URL and prints an evidence-graded
-// ScanReport as protojson. In slice S0 the scan is served by the stub
-// ScanService, so the report is canned.
+// ScanReport as protojson (--format json, the default) or as Markdown
+// (--format md). In slice S0 the scan is served by the stub ScanService,
+// so the report is canned.
 package main
 
 import (
@@ -13,11 +14,12 @@ import (
 
 	touchstonev1 "github.com/FootprintAI/touchstone/gen/go/touchstone/v1"
 	"github.com/FootprintAI/touchstone/internal/fetch"
+	"github.com/FootprintAI/touchstone/internal/report"
 	"github.com/FootprintAI/touchstone/internal/service"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const usage = "usage: touchstone scan [--allow-private] <url>"
+const usage = "usage: touchstone scan [--allow-private] [--format json|md] <url>"
 
 // newService builds the ScanService for one CLI invocation. The fetch
 // options carry CLI-only settings such as --allow-private, which the
@@ -39,15 +41,37 @@ func run(ctx context.Context, args []string, out io.Writer, newSvc newService) e
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	allowPrivate := fs.Bool("allow-private", false, "allow fetching loopback and private addresses (local fixtures only)")
+	format := fs.String("format", "json", "output format: json (protojson) or md (Markdown)")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 1 {
 		return errors.New(usage)
 	}
-	svc := newSvc(fetch.Options{AllowPrivate: *allowPrivate, Version: service.ToolVersion})
-	report, err := svc.Scan(ctx, &touchstonev1.ScanRequest{Url: fs.Arg(0)})
+	render, err := renderer(*format)
 	if err != nil {
 		return err
 	}
-	b, err := protojson.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(report)
+	svc := newSvc(fetch.Options{AllowPrivate: *allowPrivate, Version: service.ToolVersion})
+	rep, err := svc.Scan(ctx, &touchstonev1.ScanRequest{Url: fs.Arg(0)})
+	if err != nil {
+		return err
+	}
+	return render(out, rep)
+}
+
+// renderer picks the output format. Unknown formats are rejected before
+// the scan runs, so a typo never costs a scan.
+func renderer(format string) (func(io.Writer, *touchstonev1.ScanReport) error, error) {
+	switch format {
+	case "json":
+		return writeJSON, nil
+	case "md", "markdown":
+		return report.WriteMarkdown, nil
+	default:
+		return nil, fmt.Errorf("unknown --format %q, want json or md\n%s", format, usage)
+	}
+}
+
+func writeJSON(out io.Writer, rep *touchstonev1.ScanReport) error {
+	b, err := protojson.MarshalOptions{Multiline: true, Indent: "  "}.Marshal(rep)
 	if err != nil {
 		return err
 	}
