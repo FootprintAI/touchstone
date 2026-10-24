@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -17,11 +18,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// Scanner is the walking-skeleton ScanService (slice S2). It fetches the
-// target page and the scripts it loads through a PassiveFetcher,
-// fingerprints them, looks each purl up through vuln.Source, and returns
-// the report. Merging across tiers and the NVD, KEV and EPSS lookups come
-// in later slices.
+// Scanner is the ScanService. It fetches the target page and the scripts it
+// loads through a PassiveFetcher, fingerprints them, matches each component
+// against the vulnerability sources, and returns the report. Merging across
+// tiers comes in a later slice.
 type Scanner struct {
 	touchstonev1.UnimplementedScanServiceServer
 
@@ -32,6 +32,16 @@ type Scanner struct {
 
 	// Vulns looks components up by purl (OSV in the CLI).
 	Vulns vuln.Source
+
+	// CPE looks components that have a CPE but no purl up (NVD in the CLI).
+	// CPEMax caps the lookups one scan makes (vuln.NVDMaxLookups); components
+	// past the cap are reported as not looked up.
+	CPE    vuln.Source
+	CPEMax int
+
+	// KEV and EPSS enrich every CVE the lookups found.
+	KEV  vuln.Enricher
+	EPSS vuln.Enricher
 
 	// Now returns the scan's start and completion time; time.Now if nil.
 	Now func() time.Time
@@ -118,41 +128,119 @@ func collect(ctx context.Context, f fetch.Fetcher, page *fetch.Response) ([]pipe
 	return merge(comps), errors.Join(errs...)
 }
 
-// lookup asks vuln.Source about every component that has a purl and
-// converts the components to proto. It returns the lookup status, which is
-// COMPLETE only if every lookup succeeded.
+// lookup matches every component against the vulnerability sources and
+// converts the components to proto. A component with a purl goes to Vulns;
+// one with only a CPE goes to CPE, up to CPEMax lookups. Every CVE found is
+// enriched with KEV and EPSS, and each component's findings are ranked. Each
+// source that was asked anything gets a SourceStatus. The lookup status is
+// COMPLETE only if every question was answered.
 func (s *Scanner) lookup(ctx context.Context, rep *touchstonev1.ScanReport, comps []pipeline.Component) (touchstonev1.LookupStatus, []*touchstonev1.Component) {
-	var out []*touchstonev1.Component
-	var ok, failed int
-	var errs []error
-	for _, c := range comps {
-		var findings []vuln.Finding
-		if c.Purl != "" {
-			var err error
-			findings, err = s.Vulns.Lookup(ctx, []vuln.Query{{Purl: c.Purl}})
-			if err != nil {
-				failed++
-				errs = append(errs, err)
-			} else {
-				ok++
+	osv := &tally{name: s.Vulns.Name()}
+	nvd := &tally{name: s.CPE.Name()}
+	kev := &tally{name: s.KEV.Name()}
+	epss := &tally{name: s.EPSS.Name()}
+
+	findings := make([][]vuln.Finding, len(comps))
+	var cpeLookups, capped int
+	for i, c := range comps {
+		switch {
+		case c.Purl != "":
+			f, err := s.Vulns.Lookup(ctx, []vuln.Query{{Purl: c.Purl}})
+			osv.answer(err)
+			findings[i] = f
+		case c.CPE != "":
+			if cpeLookups >= s.CPEMax {
+				capped++
+				continue
 			}
+			cpeLookups++
+			f, err := s.CPE.Lookup(ctx, []vuln.Query{{CPE: c.CPE}})
+			nvd.answer(err)
+			findings[i] = f
 		}
-		out = append(out, toProto(c, findings))
 	}
-	if ok+failed > 0 {
-		rep.Sources = append(rep.Sources, &touchstonev1.SourceStatus{
-			Source: s.Vulns.Name(),
-			Ok:     failed == 0,
-			Error:  errText(errors.Join(errs...)),
-		})
+	if capped > 0 {
+		nvd.skip(capped, fmt.Errorf("capped at %d CPE lookups per scan, %d components not looked up (NVD_API_KEY raises the cap)", s.CPEMax, capped))
+	}
+
+	var ids []string
+	for _, fs := range findings {
+		for _, f := range fs {
+			ids = append(ids, f.ID)
+		}
+	}
+	var kevs, epsss map[string]vuln.Enrichment
+	if len(ids) > 0 {
+		var err error
+		kevs, err = s.KEV.Enrich(ctx, ids)
+		kev.answer(err)
+		epsss, err = s.EPSS.Enrich(ctx, ids)
+		epss.answer(err)
+	}
+
+	var out []*touchstonev1.Component
+	for i, c := range comps {
+		vuln.Apply(findings[i], kevs, epsss)
+		vuln.Rank(findings[i])
+		out = append(out, toProto(c, findings[i]))
+	}
+	for _, t := range []*tally{osv, nvd, kev, epss} {
+		if t.asked > 0 {
+			rep.Sources = append(rep.Sources, t.status())
+		}
+	}
+	return lookupStatus(osv, nvd, kev, epss), out
+}
+
+// tally counts the questions one source was asked and the ones it failed to
+// answer.
+type tally struct {
+	name   string
+	asked  int
+	failed int
+	errs   []error
+}
+
+// answer records one question, failed if err is not nil.
+func (t *tally) answer(err error) {
+	t.asked++
+	if err != nil {
+		t.failed++
+		t.errs = append(t.errs, err)
+	}
+}
+
+// skip records n questions the source was never asked, because a limit
+// stopped them, as failed with the reason.
+func (t *tally) skip(n int, err error) {
+	t.asked += n
+	t.failed += n
+	t.errs = append(t.errs, err)
+}
+
+func (t *tally) status() *touchstonev1.SourceStatus {
+	return &touchstonev1.SourceStatus{
+		Source: t.name,
+		Ok:     t.failed == 0,
+		Error:  errText(errors.Join(t.errs...)),
+	}
+}
+
+// lookupStatus is COMPLETE when no question failed, FAILED when every question
+// failed, and PARTIAL when some did. A scan that asked nothing is COMPLETE.
+func lookupStatus(ts ...*tally) touchstonev1.LookupStatus {
+	var asked, failed int
+	for _, t := range ts {
+		asked += t.asked
+		failed += t.failed
 	}
 	switch {
 	case failed == 0:
-		return touchstonev1.LookupStatus_LOOKUP_STATUS_COMPLETE, out
-	case ok > 0:
-		return touchstonev1.LookupStatus_LOOKUP_STATUS_PARTIAL, out
+		return touchstonev1.LookupStatus_LOOKUP_STATUS_COMPLETE
+	case failed == asked:
+		return touchstonev1.LookupStatus_LOOKUP_STATUS_FAILED
 	default:
-		return touchstonev1.LookupStatus_LOOKUP_STATUS_FAILED, out
+		return touchstonev1.LookupStatus_LOOKUP_STATUS_PARTIAL
 	}
 }
 
@@ -209,9 +297,12 @@ func toProto(c pipeline.Component, findings []vuln.Finding) *touchstonev1.Compon
 	}
 	for _, f := range findings {
 		out.Vulnerabilities = append(out.Vulnerabilities, &touchstonev1.Vulnerability{
-			Id:      f.ID,
-			Aliases: f.Aliases,
-			Summary: f.Summary,
+			Id:       f.ID,
+			Aliases:  f.Aliases,
+			Summary:  f.Summary,
+			Kev:      f.KEV,
+			Epss:     f.EPSS,
+			CvssBase: f.CVSSBase,
 		})
 	}
 	return out
