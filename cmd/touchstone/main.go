@@ -1,7 +1,8 @@
 // Command touchstone scans a vendor URL and prints an evidence-graded
 // ScanReport as protojson (--format json, the default) or as Markdown
 // (--format md). The scan fetches the page and its scripts passively and
-// looks components up in OSV (slice S2).
+// looks components up in OSV (by purl) and NVD (by CPE), enriched with KEV
+// and EPSS.
 package main
 
 import (
@@ -29,7 +30,16 @@ type newService func(fetch.Options) touchstonev1.ScanServiceServer
 
 func main() {
 	newSvc := func(o fetch.Options) touchstonev1.ScanServiceServer {
-		return &service.Scanner{Fetch: o, Vulns: vuln.NewOSV()}
+		// NVD_API_KEY is optional; without it NVD lookups are capped.
+		nvdKey := os.Getenv("NVD_API_KEY")
+		return &service.Scanner{
+			Fetch:  o,
+			Vulns:  vuln.NewOSV(),
+			CPE:    vuln.NewNVD(nvdKey),
+			CPEMax: vuln.NVDMaxLookups(nvdKey),
+			KEV:    vuln.NewKEV(),
+			EPSS:   vuln.NewEPSS(),
+		}
 	}
 	if err := run(context.Background(), os.Args[1:], os.Stdout, newSvc); err != nil {
 		fmt.Fprintln(os.Stderr, "touchstone:", err)
