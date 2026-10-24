@@ -1,0 +1,16 @@
+{
+  "results": [
+    {
+      "vulns": [
+        {
+          "id": "GHSA-6c3j-c64m-qhgq",
+          "modified": "2024-11-08T00:00:00Z"
+        },
+        {
+          "id": "GHSA-gxr4-xjj5-5px2",
+          "modified": "2024-11-08T00:00:00Z"
+        }
+      ]
+    }
+  ]
+}

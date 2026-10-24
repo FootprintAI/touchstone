@@ -1,0 +1,13 @@
+{
+  "id": "GHSA-gxr4-xjj5-5px2",
+  "aliases": ["CVE-2020-11022"],
+  "summary": "Potential XSS vulnerability in jQuery.htmlPrefilter",
+  "affected": [
+    {
+      "package": {"ecosystem": "npm", "name": "jquery", "purl": "pkg:npm/jquery"},
+      "ranges": [
+        {"type": "ECOSYSTEM", "events": [{"introduced": "1.2"}, {"fixed": "3.5.0"}]}
+      ]
+    }
+  ]
+}
