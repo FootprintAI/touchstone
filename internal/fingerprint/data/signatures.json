@@ -1,0 +1,14 @@
+{
+  "_comment": "Retire.js-style signatures, uri and filename extractors only. Hand-curated for slice S2 (jQuery only); to be replaced by a pinned snapshot of Retire.js jsrepository in S7. {version} in purl and cpe is replaced by the captured version.",
+  "libraries": [
+    {
+      "name": "jquery",
+      "purl": "pkg:npm/jquery@{version}",
+      "cpe": "cpe:2.3:a:jquery:jquery:{version}:*:*:*:*:*:*:*",
+      "extractors": {
+        "uri": ["jquery[-.]v?([0-9]+(?:\\.[0-9]+)+)(?:\\.min|\\.slim|\\.slim\\.min)?\\.js"],
+        "filename": ["^jquery[-.]v?([0-9]+(?:\\.[0-9]+)+)(?:\\.min|\\.slim|\\.slim\\.min)?\\.js$"]
+      }
+    }
+  ]
+}
