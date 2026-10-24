@@ -1,0 +1,59 @@
+{
+  "resultsPerPage": 3,
+  "startIndex": 0,
+  "totalResults": 3,
+  "format": "NVD_CVE",
+  "version": "2.0",
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-2021-23017",
+        "sourceIdentifier": "security@f5.com",
+        "vulnStatus": "Analyzed",
+        "descriptions": [
+          { "lang": "en", "value": "fixture: off-by-one in the nginx resolver" }
+        ],
+        "metrics": {
+          "cvssMetricV31": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "cvssData": { "version": "3.1", "baseScore": 7.7 }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2019-20372",
+        "sourceIdentifier": "security@f5.com",
+        "vulnStatus": "Analyzed",
+        "descriptions": [
+          { "lang": "en", "value": "fixture: error_page handling" },
+          { "lang": "es", "value": "fixture: manejo de error_page" }
+        ],
+        "metrics": {
+          "cvssMetricV2": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "cvssData": { "version": "2.0", "baseScore": 5.0 }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "cve": {
+        "id": "CVE-2099-0001",
+        "sourceIdentifier": "cve@mitre.org",
+        "vulnStatus": "Rejected",
+        "descriptions": [
+          { "lang": "en", "value": "fixture: rejected entry, must be dropped" }
+        ],
+        "metrics": {}
+      }
+    }
+  ]
+}
