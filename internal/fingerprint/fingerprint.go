@@ -6,7 +6,9 @@ package fingerprint
 
 import (
 	"bytes"
+	"crypto/sha1"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,6 +40,11 @@ type signatureFile struct {
 		Extractors struct {
 			URI      []string `json:"uri"`
 			Filename []string `json:"filename"`
+			// FileContent patterns run against the asset body. The
+			// Retire.js token §§version§§ stands for the version capture.
+			FileContent []string `json:"filecontent"`
+			// Hashes maps the SHA-1 of an asset body to its version.
+			Hashes map[string]string `json:"hashes"`
 		} `json:"extractors"`
 	} `json:"libraries"`
 }
@@ -46,7 +53,19 @@ type signatureFile struct {
 type library struct {
 	name, purl, cpe string
 	uri, filename   []*regexp2.Regexp
+	content         []*regexp2.Regexp
+	hashes          map[string]string
 }
+
+// versionToken is the Retire.js placeholder for the version in a filecontent
+// pattern; versionCapture is what it expands to.
+const (
+	versionToken   = "§§version§§"
+	versionCapture = `([0-9][0-9.a-z_\-]+)`
+)
+
+// maxEvidenceDetail caps the matched text kept as evidence.
+const maxEvidenceDetail = 120
 
 // libraries is compiled once at start-up from the embedded signatures. A
 // bad pattern is a build-time bug, so it panics; TestSignaturesCompile
@@ -76,6 +95,14 @@ func compile(data []byte) ([]library, error) {
 		if lib.filename, err = compileAll(l.Name, "filename", l.Extractors.Filename); err != nil {
 			return nil, err
 		}
+		content := make([]string, len(l.Extractors.FileContent))
+		for i, p := range l.Extractors.FileContent {
+			content[i] = strings.ReplaceAll(p, versionToken, versionCapture)
+		}
+		if lib.content, err = compileAll(l.Name, "filecontent", content); err != nil {
+			return nil, err
+		}
+		lib.hashes = l.Extractors.Hashes
 		out = append(out, lib)
 	}
 	return out, nil
@@ -142,18 +169,53 @@ func (l library) match(input string, res []*regexp2.Regexp) (pipeline.Component,
 		if m == nil {
 			continue
 		}
-		version := m.GroupByNumber(1).String()
-		c := pipeline.Component{
-			Name:       l.name,
-			Version:    version,
-			Purl:       strings.ReplaceAll(l.purl, "{version}", version),
-			CPE:        strings.ReplaceAll(l.cpe, "{version}", version),
-			Confidence: "LOW",
-			Evidence:   []pipeline.Evidence{{Detail: m.String()}},
-		}
-		return c, true, nil
+		return l.component(m.GroupByNumber(1).String(), m.String()), true, nil
 	}
 	return pipeline.Component{}, false, nil
+}
+
+// component builds a Low-confidence component for version.
+func (l library) component(version, detail string) pipeline.Component {
+	return pipeline.Component{
+		Name:       l.name,
+		Version:    version,
+		Purl:       strings.ReplaceAll(l.purl, "{version}", version),
+		CPE:        strings.ReplaceAll(l.cpe, "{version}", version),
+		Confidence: "LOW",
+		Evidence:   []pipeline.Evidence{{Detail: detail}},
+	}
+}
+
+// FromContent matches an asset body against the filecontent extractors and
+// the SHA-1 hashes. Each library it recognises yields one Low-confidence
+// component with the asset URL as evidence. A match that times out is
+// reported as an error and skipped.
+func FromContent(assetURL string, body []byte) ([]pipeline.Component, error) {
+	text := string(body)
+	sum := sha1.Sum(body)
+	digest := hex.EncodeToString(sum[:])
+	var out []pipeline.Component
+	var errs []error
+	for _, lib := range libraries {
+		c, ok, err := lib.match(text, lib.content)
+		if err != nil {
+			errs = append(errs, err)
+		} else if !ok {
+			if v, hit := lib.hashes[digest]; hit {
+				c, ok = lib.component(v, "sha1:"+digest), true
+			}
+		}
+		if !ok {
+			continue
+		}
+		detail := c.Evidence[0].Detail
+		if len(detail) > maxEvidenceDetail {
+			detail = detail[:maxEvidenceDetail]
+		}
+		c.Evidence = []pipeline.Evidence{{Kind: "FINGERPRINT_ASSET", Location: assetURL, Detail: detail}}
+		out = append(out, c)
+	}
+	return out, errors.Join(errs...)
 }
 
 // headerRule maps one response header value to a component. Banners

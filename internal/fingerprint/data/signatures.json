@@ -1,5 +1,5 @@
 {
-  "_comment": "Retire.js-style signatures, uri and filename extractors only. Hand-curated for slice S2 (jQuery only); to be replaced by a pinned snapshot of Retire.js jsrepository in S7. {version} in purl and cpe is replaced by the captured version.",
+  "_comment": "Retire.js-style signatures (uri, filename, filecontent, hashes). Hand-curated subset in the Retire.js jsrepository shape; to be replaced by a pinned snapshot of jsrepository-v4.json (Apache-2.0, see NOTICE). {version} in purl and cpe is replaced by the captured version; §§version§§ in a filecontent pattern is the version capture.",
   "libraries": [
     {
       "name": "jquery",
@@ -8,6 +8,27 @@
       "extractors": {
         "uri": ["jquery[-.]v?([0-9]+(?:\\.[0-9]+)+)(?:\\.min|\\.slim|\\.slim\\.min)?\\.js"],
         "filename": ["^jquery[-.]v?([0-9]+(?:\\.[0-9]+)+)(?:\\.min|\\.slim|\\.slim\\.min)?\\.js$"]
+      }
+    },
+    {
+      "name": "react",
+      "purl": "pkg:npm/react@{version}",
+      "cpe": "cpe:2.3:a:facebook:react:{version}:*:*:*:*:*:*:*",
+      "extractors": {
+        "filecontent": [
+          "/\\*\\*?\\s*@license React v§§version§§"
+        ]
+      }
+    },
+    {
+      "name": "vue",
+      "purl": "pkg:npm/vue@{version}",
+      "cpe": "cpe:2.3:a:vuejs:vue:{version}:*:*:*:*:*:*:*",
+      "extractors": {
+        "filecontent": [
+          "/\\*!\\s*\\*\\s*Vue\\.js v§§version§§",
+          "Vue\\.version\\s*=\\s*[\"']§§version§§[\"']"
+        ]
       }
     }
   ]

@@ -3,14 +3,17 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
 	touchstonev1 "github.com/FootprintAI/touchstone/gen/go/touchstone/v1"
+	"github.com/FootprintAI/touchstone/internal/discover"
 	"github.com/FootprintAI/touchstone/internal/fetch"
 	"github.com/FootprintAI/touchstone/internal/fingerprint"
 	"github.com/FootprintAI/touchstone/internal/pipeline"
+	"github.com/FootprintAI/touchstone/internal/sbom"
 	"github.com/FootprintAI/touchstone/internal/vuln"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,6 +47,9 @@ var _ touchstonev1.ScanServiceServer = (*Scanner)(nil)
 func (s *Scanner) Scan(ctx context.Context, req *touchstonev1.ScanRequest) (*touchstonev1.ScanReport, error) {
 	target, err := absoluteURL(req.GetUrl())
 	if err != nil {
+		return nil, err
+	}
+	if err := validateSupplied(req); err != nil {
 		return nil, err
 	}
 	opts := s.Fetch
@@ -81,6 +87,26 @@ func (s *Scanner) Scan(ctx context.Context, req *touchstonev1.ScanRequest) (*tou
 		Error:  errText(fpErr),
 	})
 
+	// Discovery runs after the page's own scripts, so a tight budget goes
+	// to what a browser would load first.
+	disc := discover.Run(ctx, f, target, page.Body)
+	rep.Sources = append(rep.Sources, &touchstonev1.SourceStatus{
+		Source: "discover",
+		Ok:     len(disc.Errors) == 0,
+		Error:  errText(errors.Join(disc.Errors...)),
+	})
+	supplied, supErr := suppliedComponents(ctx, f, req)
+	if req.GetSbomUrl() != "" || len(req.GetSbomDocument()) > 0 {
+		rep.Sources = append(rep.Sources, &touchstonev1.SourceStatus{
+			Source: "sbom-supplied",
+			Ok:     supErr == nil,
+			Error:  errText(supErr),
+		})
+	}
+	// High-confidence components first, so merge keeps their version.
+	high := append(supplied, vexComponents(disc.VEX)...)
+	comps = merge(append(high, comps...))
+
 	rep.LookupStatus, rep.Components = s.lookup(ctx, rep, comps)
 	s.finish(rep, f, now)
 	return rep, nil
@@ -114,8 +140,84 @@ func collect(ctx context.Context, f fetch.Fetcher, page *fetch.Response) ([]pipe
 		if err != nil {
 			errs = append(errs, err)
 		}
+		found, err = fingerprint.FromContent(src, resp.Body)
+		comps = append(comps, found...)
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 	return merge(comps), errors.Join(errs...)
+}
+
+// validateSupplied rejects a bad reviewer-supplied SBOM before any
+// request is sent.
+func validateSupplied(req *touchstonev1.ScanRequest) error {
+	if u := req.GetSbomUrl(); u != "" {
+		if _, err := absoluteURL(u); err != nil {
+			return status.Errorf(codes.InvalidArgument, "sbom_url must be an absolute http(s) URL, got %q", u)
+		}
+	}
+	if n := len(req.GetSbomDocument()); n > fetch.MaxResponseBytes {
+		return status.Errorf(codes.InvalidArgument, "sbom_document is %d bytes, the maximum is %d", n, fetch.MaxResponseBytes)
+	}
+	return nil
+}
+
+// suppliedComponents reads the reviewer-supplied SBOM/VEX: the uploaded
+// document, and the one at sbom_url, which is fetched as a DECLARED
+// request so it shows in checked and counts against the budget.
+func suppliedComponents(ctx context.Context, f fetch.Fetcher, req *touchstonev1.ScanRequest) ([]pipeline.Component, error) {
+	var comps []pipeline.Component
+	var errs []error
+	add := func(location string, body []byte) {
+		doc, err := sbom.Parse(body)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", location, err))
+			return
+		}
+		comps = append(comps, fromSBOM(doc, location, "SBOM_SUPPLIED")...)
+	}
+	if body := req.GetSbomDocument(); len(body) > 0 {
+		add("uploaded document", body)
+	}
+	if u := req.GetSbomUrl(); u != "" {
+		resp, err := f.Get(ctx, u, fetch.ReasonDeclared)
+		switch {
+		case err != nil:
+			errs = append(errs, err)
+		case resp.StatusCode < 200 || resp.StatusCode >= 300:
+			errs = append(errs, fmt.Errorf("%s: HTTP %d", u, resp.StatusCode))
+		default:
+			add(u, resp.Body)
+		}
+	}
+	return comps, errors.Join(errs...)
+}
+
+// vexComponents converts the CSAF VEX documents discovery parsed.
+func vexComponents(docs []discover.VEX) []pipeline.Component {
+	var out []pipeline.Component
+	for _, d := range docs {
+		out = append(out, fromSBOM(d.Doc, d.URL, "VEX")...)
+	}
+	return out
+}
+
+// fromSBOM makes High-confidence components with evidence of the given
+// kind (a proto EvidenceKind name without its prefix).
+func fromSBOM(doc *sbom.Document, location, kind string) []pipeline.Component {
+	var out []pipeline.Component
+	for _, c := range doc.Components {
+		out = append(out, pipeline.Component{
+			Name:       c.Name,
+			Version:    c.Version,
+			Purl:       c.Purl,
+			CPE:        c.CPE,
+			Confidence: "HIGH",
+			Evidence:   []pipeline.Evidence{{Kind: kind, Location: location, Detail: string(doc.Format)}},
+		})
+	}
+	return out
 }
 
 // lookup asks vuln.Source about every component that has a purl and

@@ -1,12 +1,88 @@
 package fingerprint
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
+
+const (
+	reactBundle = "/** @license React v18.2.0\n * react.production.min.js\n */\n(function(){var a=1})();"
+	vueBundle   = "/*!\n * Vue.js v2.6.14\n * (c) 2014-2021 Evan You\n */\n(function(g,f){})(this,function(){});"
+)
+
+func TestFromContent(t *testing.T) {
+	tests := []struct {
+		name, body, want, purl string
+	}{
+		{"react", reactBundle, "react 18.2.0", "pkg:npm/react@18.2.0"},
+		{"vue", vueBundle, "vue 2.6.14", "pkg:npm/vue@2.6.14"},
+		{"unrelated", "var x = 1;", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FromContent("https://vendor.example/app.js", []byte(tt.body))
+			if err != nil {
+				t.Fatalf("FromContent: %v", err)
+			}
+			if tt.want == "" {
+				if len(got) != 0 {
+					t.Fatalf("FromContent = %+v, want none", got)
+				}
+				return
+			}
+			if len(got) != 1 || got[0].Name+" "+got[0].Version != tt.want || got[0].Purl != tt.purl {
+				t.Fatalf("FromContent = %+v, want %s %s", got, tt.want, tt.purl)
+			}
+			e := got[0].Evidence
+			if got[0].Confidence != "LOW" || len(e) != 1 || e[0].Kind != "FINGERPRINT_ASSET" || e[0].Location != "https://vendor.example/app.js" {
+				t.Errorf("component = %+v", got[0])
+			}
+		})
+	}
+}
+
+// withLibraries swaps the compiled signatures for the test's duration.
+func withLibraries(t *testing.T, sigs string) {
+	t.Helper()
+	libs, err := compile([]byte(sigs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := libraries
+	libraries = libs
+	t.Cleanup(func() { libraries = saved })
+}
+
+func TestFromContentHash(t *testing.T) {
+	body := []byte("known bundle")
+	sum := sha1.Sum(body)
+	withLibraries(t, `{"libraries":[{"name":"lib","purl":"pkg:npm/lib@{version}","cpe":"","extractors":{"hashes":{"`+
+		hex.EncodeToString(sum[:])+`":"1.2.3"}}}]}`)
+	got, err := FromContent("https://vendor.example/lib.js", body)
+	if err != nil || len(got) != 1 || got[0].Version != "1.2.3" || got[0].Purl != "pkg:npm/lib@1.2.3" {
+		t.Fatalf("FromContent = %+v, %v", got, err)
+	}
+}
+
+// A pattern with nested quantifiers backtracks exponentially on this input.
+// The match must stop at the timeout and come back as an error.
+func TestMatchTimeoutReDoS(t *testing.T) {
+	withLibraries(t, `{"libraries":[{"name":"evil","purl":"","cpe":"","extractors":{"filecontent":["(a+)+$"]}}]}`)
+	start := time.Now()
+	got, err := FromContent("https://vendor.example/x.js", []byte(strings.Repeat("a", 64)+"!"))
+	if err == nil {
+		t.Fatalf("FromContent = %+v, want a timeout error", got)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("match took %v, want it cut off near %v", elapsed, matchTimeout)
+	}
+}
 
 func TestSignaturesCompile(t *testing.T) {
 	libs, err := compile(signatureData)
