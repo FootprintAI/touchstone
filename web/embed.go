@@ -1,6 +1,6 @@
-// Package web embeds the Next.js static export that `touchstone serve`
-// returns. `make web-build` writes the export to web/out; it is not
-// committed. out/.gitkeep keeps the embed pattern valid on a fresh checkout.
+// Package web embeds the static export of the Next.js page (web/out, built
+// with `npm run build`). Only the placeholder .gitkeep is committed, so the
+// Go build works before the page has been built; the page is then a 404.
 package web
 
 import (
@@ -9,10 +9,13 @@ import (
 )
 
 //go:embed all:out
-var out embed.FS
+var embedded embed.FS
 
-// Static returns the exported page with out/ stripped, so index.html and
-// _next/ sit at the root.
-func Static() (fs.FS, error) {
-	return fs.Sub(out, "out")
+// Page returns the exported page rooted at its index.html.
+func Page() fs.FS {
+	sub, err := fs.Sub(embedded, "out")
+	if err != nil {
+		panic(err) // "out" is always embedded
+	}
+	return sub
 }

@@ -1,5 +1,5 @@
-import { ScanPage } from "../components/scan-page";
+import { ScanPage } from "../components/ScanPage";
 
-export default function Home() {
+export default function Page() {
   return <ScanPage />;
 }

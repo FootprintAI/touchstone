@@ -1,8 +1,8 @@
 // Command touchstone scans a vendor URL and prints an evidence-graded
 // ScanReport as protojson (--format json, the default) or as Markdown
-// (--format md). In slice S0 the scan is served by the stub ScanService,
-// so the report is canned. `touchstone serve` runs the embedded web page
-// and POST /v1/scans on 127.0.0.1:8080 (serve.go).
+// (--format md), or serves the web page and POST /v1/scans (serve, slice
+// S9). The scan fetches the page and its scripts passively and
+// looks components up in OSV (slice S2).
 package main
 
 import (
@@ -17,11 +17,11 @@ import (
 	"github.com/FootprintAI/touchstone/internal/fetch"
 	"github.com/FootprintAI/touchstone/internal/report"
 	"github.com/FootprintAI/touchstone/internal/service"
-	"github.com/FootprintAI/touchstone/web"
+	"github.com/FootprintAI/touchstone/internal/vuln"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const usage = "usage: touchstone scan [--allow-private] [--format json|md] <url>"
+const usage = "usage: touchstone scan [--allow-private] [--format json|md] <url>\n       touchstone serve [--addr host:port]"
 
 // newService builds the ScanService for one CLI invocation. The fetch
 // options carry CLI-only settings such as --allow-private, which the
@@ -29,30 +29,19 @@ const usage = "usage: touchstone scan [--allow-private] [--format json|md] <url>
 type newService func(fetch.Options) touchstonev1.ScanServiceServer
 
 func main() {
-	ctx := context.Background()
-	var err error
-	if len(os.Args) > 1 && os.Args[1] == "serve" {
-		err = serveMain(ctx, os.Args[2:])
-	} else {
-		newSvc := func(fetch.Options) touchstonev1.ScanServiceServer { return &service.Stub{} }
-		err = run(ctx, os.Args[1:], os.Stdout, newSvc)
+	newSvc := func(o fetch.Options) touchstonev1.ScanServiceServer {
+		return &service.Scanner{Fetch: o, Vulns: vuln.NewOSV()}
 	}
-	if err != nil {
+	if err := run(context.Background(), os.Args[1:], os.Stdout, newSvc); err != nil {
 		fmt.Fprintln(os.Stderr, "touchstone:", err)
 		os.Exit(2)
 	}
 }
 
-// serveMain loads the embedded web page and runs serve with it.
-func serveMain(ctx context.Context, args []string) error {
-	static, err := web.Static()
-	if err != nil {
-		return err
-	}
-	return serve(ctx, args, static)
-}
-
 func run(ctx context.Context, args []string, out io.Writer, newSvc newService) error {
+	if len(args) > 0 && args[0] == "serve" {
+		return serve(ctx, args[1:], out, newSvc)
+	}
 	if len(args) == 0 || args[0] != "scan" {
 		return errors.New(usage)
 	}
