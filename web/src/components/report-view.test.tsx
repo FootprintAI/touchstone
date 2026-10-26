@@ -7,6 +7,7 @@ import {
   Confidence,
   ComponentSchema,
   LookupStatus,
+  VulnerabilitySchema,
 } from "../gen/touchstone/v1/scan_pb";
 import { goldenReport } from "../test/golden";
 import { ReportView } from "./report-view";
@@ -117,6 +118,31 @@ describe("ReportView", () => {
     expect(within(checked).getByText("not found")).toBeTruthy();
     expect(within(checked).getByText("refused")).toBeTruthy();
     expect(within(checked).getByText("not an allowed reason")).toBeTruthy();
+  });
+
+  it("lists a component's CVEs in the order the server sent them", () => {
+    // Neither ascending nor descending, so a sort or a reverse in the component fails.
+    const report = goldenReport();
+    report.components.push(
+      create(ComponentSchema, {
+        name: "openssl",
+        version: "1.1.1",
+        confidence: Confidence.LOW,
+        vulnerabilities: [
+          create(VulnerabilitySchema, { id: "CVE-2024-0002" }),
+          create(VulnerabilitySchema, { id: "CVE-2023-0001" }),
+          create(VulnerabilitySchema, { id: "CVE-2025-0003" }),
+        ],
+      }),
+    );
+    render(<ReportView report={report} />);
+
+    const card = within(lowTier()).getByRole("heading", { name: /openssl/ }).closest("article");
+    expect(card).toBeTruthy();
+    const ids = within(card as HTMLElement)
+      .getAllByText(/^CVE-/)
+      .map((el) => el.textContent);
+    expect(ids).toEqual(["CVE-2024-0002", "CVE-2023-0001", "CVE-2025-0003"]);
   });
 
   it("shows the disclaimer from the report", () => {

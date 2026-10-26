@@ -10,13 +10,18 @@ import (
 	"testing/fstest"
 	"time"
 
+	touchstonev1 "github.com/FootprintAI/touchstone/gen/go/touchstone/v1"
 	"github.com/FootprintAI/touchstone/internal/service"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	return newServerFor(t, &service.Stub{Now: func() time.Time { return time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC) }})
+}
+
+func newServerFor(t *testing.T, svc touchstonev1.ScanServiceServer) *httptest.Server {
+	t.Helper()
 	static := fstest.MapFS{"index.html": {Data: []byte("<html>touchstone page</html>")}}
-	svc := &service.Stub{Now: func() time.Time { return time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC) }}
 	h, err := New(context.Background(), svc, static)
 	if err != nil {
 		t.Fatal(err)
@@ -70,10 +75,26 @@ func TestPostScanRejectsBadURL(t *testing.T) {
 	}
 }
 
+// countingService counts the Scan calls that reach the service.
+type countingService struct {
+	*service.Stub
+	calls int
+}
+
+func (c *countingService) Scan(ctx context.Context, req *touchstonev1.ScanRequest) (*touchstonev1.ScanReport, error) {
+	c.calls++
+	return c.Stub.Scan(ctx, req)
+}
+
 func TestPostScanRejectsOversizedBody(t *testing.T) {
-	srv := newTestServer(t)
+	svc := &countingService{Stub: &service.Stub{Now: func() time.Time { return time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC) }}}
+	srv := newServerFor(t, svc)
 	big := `{"url":"https://example.com","sbom_document":"` + strings.Repeat("A", maxRequestBytes) + `"}`
-	if status, _ := post(t, srv, big); status == http.StatusOK {
-		t.Fatal("oversized body was accepted")
+	// The gateway turns the body-read error from MaxBytesHandler into InvalidArgument, which is 400.
+	if status, body := post(t, srv, big); status != http.StatusBadRequest {
+		t.Errorf("oversized POST = %d, want 400, body %s", status, body)
+	}
+	if svc.calls != 0 {
+		t.Errorf("service was called %d times for an oversized body, want 0", svc.calls)
 	}
 }

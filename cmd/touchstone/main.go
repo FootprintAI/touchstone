@@ -40,7 +40,7 @@ func main() {
 
 func run(ctx context.Context, args []string, out io.Writer, newSvc newService) error {
 	if len(args) > 0 && args[0] == "serve" {
-		return serve(ctx, args[1:], out, newSvc)
+		return serve(ctx, args[1:], out, os.Stderr, newSvc)
 	}
 	if len(args) == 0 || args[0] != "scan" {
 		return errors.New(usage)

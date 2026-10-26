@@ -29,8 +29,9 @@ const (
 
 // serve runs the embedded page and POST /v1/scans on one port. It has no
 // --allow-private: the fetch options carry only the tool version, so the
-// server always refuses loopback and private targets.
-func serve(ctx context.Context, args []string, out io.Writer, newSvc newService) error {
+// server always refuses loopback and private targets. It has no
+// authentication either, so a non-loopback address gets a warning on errOut.
+func serve(ctx context.Context, args []string, out, errOut io.Writer, newSvc newService) error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	addr := flags.String("addr", envOr("TOUCHSTONE_ADDR", defaultAddr), "listen address (env TOUCHSTONE_ADDR)")
@@ -44,6 +45,9 @@ func serve(ctx context.Context, args []string, out io.Writer, newSvc newService)
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		return err
+	}
+	if warning := nonLoopbackWarning(*addr); warning != "" {
+		fmt.Fprint(errOut, warning)
 	}
 	srv := &http.Server{
 		Handler:           handler,
@@ -88,6 +92,23 @@ func withTimeout(next http.Handler, d time.Duration) http.Handler {
 		defer cancel()
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// nonLoopbackWarning returns the stderr warning for an address that other
+// hosts can reach, or "" for a loopback address. An empty host such as ":8080"
+// listens on every interface, so it warns.
+func nonLoopbackWarning(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "" // net.Listen reports the malformed address
+	}
+	if host == "localhost" {
+		return ""
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return ""
+	}
+	return fmt.Sprintf("touchstone: warning: serving on %s, which other hosts can reach; the server has no authentication. Use a loopback address such as 127.0.0.1 unless that is intended.\n", addr)
 }
 
 func envOr(key, def string) string {
