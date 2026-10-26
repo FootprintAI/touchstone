@@ -1,7 +1,9 @@
 // Command touchstone scans a vendor URL and prints an evidence-graded
 // ScanReport as protojson (--format json, the default) or as Markdown
 // (--format md). The scan fetches the page and its scripts passively and
-// looks components up in OSV (slice S2).
+// looks components up in OSV (slice S2). It also probes the discovery
+// paths (security.txt, CSAF, TEA) and accepts a reviewer-supplied SBOM/VEX
+// by --sbom-url or --sbom (slice S5).
 package main
 
 import (
@@ -20,7 +22,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const usage = "usage: touchstone scan [--allow-private] [--format json|md] <url>"
+const usage = "usage: touchstone scan [--allow-private] [--format json|md] [--sbom-url <url>] [--sbom <file>] <url>"
 
 // newService builds the ScanService for one CLI invocation. The fetch
 // options carry CLI-only settings such as --allow-private, which the
@@ -45,6 +47,8 @@ func run(ctx context.Context, args []string, out io.Writer, newSvc newService) e
 	fs.SetOutput(io.Discard)
 	allowPrivate := fs.Bool("allow-private", false, "allow fetching loopback and private addresses (local fixtures only)")
 	format := fs.String("format", "json", "output format: json (protojson) or md (Markdown)")
+	sbomURL := fs.String("sbom-url", "", "URL of an SBOM/VEX you already have (CycloneDX, SPDX, OpenVEX or CSAF VEX)")
+	sbomFile := fs.String("sbom", "", "path of an SBOM/VEX file you already have")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 1 {
 		return errors.New(usage)
 	}
@@ -52,8 +56,14 @@ func run(ctx context.Context, args []string, out io.Writer, newSvc newService) e
 	if err != nil {
 		return err
 	}
+	req := &touchstonev1.ScanRequest{Url: fs.Arg(0), SbomUrl: *sbomURL}
+	if *sbomFile != "" {
+		if req.SbomDocument, err = os.ReadFile(*sbomFile); err != nil {
+			return fmt.Errorf("read --sbom: %w", err)
+		}
+	}
 	svc := newSvc(fetch.Options{AllowPrivate: *allowPrivate, Version: service.ToolVersion})
-	rep, err := svc.Scan(ctx, &touchstonev1.ScanRequest{Url: fs.Arg(0)})
+	rep, err := svc.Scan(ctx, req)
 	if err != nil {
 		return err
 	}

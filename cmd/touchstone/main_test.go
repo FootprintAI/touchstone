@@ -174,3 +174,35 @@ func TestScanRejectsBadArgs(t *testing.T) {
 		}
 	}
 }
+
+// capturingService records the ScanRequest it receives.
+type capturingService struct {
+	service.Stub
+	req *touchstonev1.ScanRequest
+}
+
+func (c *capturingService) Scan(ctx context.Context, req *touchstonev1.ScanRequest) (*touchstonev1.ScanReport, error) {
+	c.req = req
+	return c.Stub.Scan(ctx, req)
+}
+
+func TestScanSuppliedSBOMFlags(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "sbom.json")
+	if err := os.WriteFile(file, []byte(`{"bomFormat":"CycloneDX"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := &capturingService{}
+	newSvc := func(fetch.Options) touchstonev1.ScanServiceServer { return svc }
+	args := []string{"scan", "--sbom-url", "https://v.example/sbom.json", "--sbom", file, "https://example.com"}
+	if err := run(context.Background(), args, &bytes.Buffer{}, newSvc); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if svc.req.GetSbomUrl() != "https://v.example/sbom.json" || string(svc.req.GetSbomDocument()) != `{"bomFormat":"CycloneDX"}` {
+		t.Errorf("request = %v, want sbom_url and the file's contents as sbom_document", svc.req)
+	}
+
+	missing := []string{"scan", "--sbom", filepath.Join(t.TempDir(), "nope.json"), "https://example.com"}
+	if err := run(context.Background(), missing, &bytes.Buffer{}, newSvc); err == nil {
+		t.Error("run with a missing --sbom file = nil error, want error")
+	}
+}

@@ -129,17 +129,23 @@ func TestScannerCheckedListMatchesRequests(t *testing.T) {
 		t.Fatalf("Scan: %v", err)
 	}
 	checked := rep.GetChecked()
-	if len(checked) != 2 {
-		t.Fatalf("checked = %v, want the target and the script", checked)
+	if len(checked) != 6 {
+		t.Fatalf("checked = %v, want the target, the script and the four discovery paths", checked)
 	}
-	want := []struct{ url, reason string }{
-		{site.URL + "/", "TARGET"},
-		{site.URL + "/js/jquery-1.12.4.min.js", "SUBRESOURCE"},
+	want := []struct {
+		url, reason string
+		result      touchstonev1.CheckedLocation_Result
+	}{
+		{site.URL + "/", "TARGET", touchstonev1.CheckedLocation_RESULT_FOUND},
+		{site.URL + "/js/jquery-1.12.4.min.js", "SUBRESOURCE", touchstonev1.CheckedLocation_RESULT_FOUND},
+		{site.URL + "/.well-known/security.txt", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_NOT_FOUND},
+		{site.URL + "/security.txt", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_NOT_FOUND},
+		{site.URL + "/.well-known/csaf/provider-metadata.json", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_NOT_FOUND},
+		{site.URL + "/.well-known/tea", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_NOT_FOUND},
 	}
 	for i, w := range want {
-		if checked[i].GetUrl() != w.url || checked[i].GetReason() != w.reason ||
-			checked[i].GetResult() != touchstonev1.CheckedLocation_RESULT_FOUND {
-			t.Errorf("checked[%d] = %v, want %s %s FOUND", i, checked[i], w.reason, w.url)
+		if checked[i].GetUrl() != w.url || checked[i].GetReason() != w.reason || checked[i].GetResult() != w.result {
+			t.Errorf("checked[%d] = %v, want %s %s %v", i, checked[i], w.reason, w.url, w.result)
 		}
 	}
 	if rep.GetRequestsUsed() != uint32(len(checked)) {
@@ -158,8 +164,13 @@ func TestScannerRecordsScriptRefusedByBudget(t *testing.T) {
 		t.Fatalf("Scan: %v", err)
 	}
 	checked := rep.GetChecked()
-	if len(checked) != 2 || checked[1].GetResult() != touchstonev1.CheckedLocation_RESULT_REFUSED {
+	if len(checked) < 2 || checked[1].GetResult() != touchstonev1.CheckedLocation_RESULT_REFUSED {
 		t.Fatalf("checked = %v, want the script refused by the budget", checked)
+	}
+	for _, c := range checked[1:] {
+		if c.GetResult() != touchstonev1.CheckedLocation_RESULT_REFUSED {
+			t.Errorf("%v: want every request after the target refused by the budget", c)
+		}
 	}
 	if rep.GetRequestsUsed() != 1 {
 		t.Errorf("requests_used = %d, want 1", rep.GetRequestsUsed())
