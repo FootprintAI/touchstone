@@ -1,4 +1,5 @@
 node_modules/
+# next build output and its generated type shim; web/out is embedded at build time
 web/.next/
 web/next-env.d.ts
 web/out/*
