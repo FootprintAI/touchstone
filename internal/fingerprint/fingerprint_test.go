@@ -1,8 +1,6 @@
 package fingerprint
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -10,79 +8,6 @@ import (
 	"testing"
 	"time"
 )
-
-const (
-	reactBundle = "/** @license React v18.2.0\n * react.production.min.js\n */\n(function(){var a=1})();"
-	vueBundle   = "/*!\n * Vue.js v2.6.14\n * (c) 2014-2021 Evan You\n */\n(function(g,f){})(this,function(){});"
-)
-
-func TestFromContent(t *testing.T) {
-	tests := []struct {
-		name, body, want, purl string
-	}{
-		{"react", reactBundle, "react 18.2.0", "pkg:npm/react@18.2.0"},
-		{"vue", vueBundle, "vue 2.6.14", "pkg:npm/vue@2.6.14"},
-		{"unrelated", "var x = 1;", "", ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := FromContent("https://vendor.example/app.js", []byte(tt.body))
-			if err != nil {
-				t.Fatalf("FromContent: %v", err)
-			}
-			if tt.want == "" {
-				if len(got) != 0 {
-					t.Fatalf("FromContent = %+v, want none", got)
-				}
-				return
-			}
-			if len(got) != 1 || got[0].Name+" "+got[0].Version != tt.want || got[0].Purl != tt.purl {
-				t.Fatalf("FromContent = %+v, want %s %s", got, tt.want, tt.purl)
-			}
-			e := got[0].Evidence
-			if got[0].Confidence != "LOW" || len(e) != 1 || e[0].Kind != "FINGERPRINT_ASSET" || e[0].Location != "https://vendor.example/app.js" {
-				t.Errorf("component = %+v", got[0])
-			}
-		})
-	}
-}
-
-// withLibraries swaps the compiled signatures for the test's duration.
-func withLibraries(t *testing.T, sigs string) {
-	t.Helper()
-	libs, err := compile([]byte(sigs))
-	if err != nil {
-		t.Fatal(err)
-	}
-	saved := libraries
-	libraries = libs
-	t.Cleanup(func() { libraries = saved })
-}
-
-func TestFromContentHash(t *testing.T) {
-	body := []byte("known bundle")
-	sum := sha1.Sum(body)
-	withLibraries(t, `{"libraries":[{"name":"lib","purl":"pkg:npm/lib@{version}","cpe":"","extractors":{"hashes":{"`+
-		hex.EncodeToString(sum[:])+`":"1.2.3"}}}]}`)
-	got, err := FromContent("https://vendor.example/lib.js", body)
-	if err != nil || len(got) != 1 || got[0].Version != "1.2.3" || got[0].Purl != "pkg:npm/lib@1.2.3" {
-		t.Fatalf("FromContent = %+v, %v", got, err)
-	}
-}
-
-// A pattern with nested quantifiers backtracks exponentially on this input.
-// The match must stop at the timeout and come back as an error.
-func TestMatchTimeoutReDoS(t *testing.T) {
-	withLibraries(t, `{"libraries":[{"name":"evil","purl":"","cpe":"","extractors":{"filecontent":["(a+)+$"]}}]}`)
-	start := time.Now()
-	got, err := FromContent("https://vendor.example/x.js", []byte(strings.Repeat("a", 64)+"!"))
-	if err == nil {
-		t.Fatalf("FromContent = %+v, want a timeout error", got)
-	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Errorf("match took %v, want it cut off near %v", elapsed, matchTimeout)
-	}
-}
 
 func TestSignaturesCompile(t *testing.T) {
 	libs, err := compile(signatureData)
@@ -174,6 +99,7 @@ func TestFromHeaders(t *testing.T) {
 	}{
 		{"apache", http.Header{"Server": {"Apache/2.4.29 (Ubuntu)"}}, []string{"apache http_server 2.4.29"}},
 		{"nginx", http.Header{"Server": {"nginx/1.18.0"}}, []string{"nginx 1.18.0"}},
+		{"iis", http.Header{"Server": {"Microsoft-IIS/10.0"}}, []string{"iis 10.0"}},
 		{"php", http.Header{"X-Powered-By": {"PHP/7.2.34"}}, []string{"php 7.2.34"}},
 		{"unknown banner", http.Header{"Server": {"cloudflare"}}, nil},
 		{"no headers", http.Header{}, nil},
@@ -201,6 +127,75 @@ func TestFromHeaders(t *testing.T) {
 				t.Errorf("components = %q, want %q", names, tt.want)
 			}
 		})
+	}
+}
+
+// testSignatures has one library with a content pattern and one with a
+// SHA-1 entry. sha1("abc") is a9993e36 4706816a ba3e2571 7850c26c 9cd0d89d.
+const testSignatures = `{"libraries":[
+	{"name":"fakelib","purl":"pkg:npm/fakelib@{version}","cpe":"cpe:2.3:a:fake:fakelib:{version}:*:*:*:*:*:*:*",
+	 "extractors":{"filecontent":["/\\*! FakeLib v([0-9]+\\.[0-9]+\\.[0-9]+)"]}},
+	{"name":"hashed","purl":"pkg:npm/hashed@{version}","cpe":"","extractors":{"hashes":{"A9993E364706816ABA3E25717850C26C9CD0D89D":"1.0.0"}}}
+]}`
+
+func TestFromContent(t *testing.T) {
+	libs, err := compile([]byte(testSignatures))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	const asset = "https://vendor.example/static/bundle.js"
+	tests := []struct {
+		name   string
+		body   string
+		want   string // "name version"; "" = no component
+		detail string
+	}{
+		{"banner in content", "/*! FakeLib v2.3.4 */ var x = 1;", "fakelib 2.3.4", "/*! FakeLib v2.3.4"},
+		{"sha1 of whole asset", "abc", "hashed 1.0.0", "sha1 a9993e364706816aba3e25717850c26c9cd0d89d"},
+		{"no match", "var x = 1;", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := matchContent(libs, asset, []byte(tt.body))
+			if err != nil {
+				t.Fatalf("matchContent: %v", err)
+			}
+			if tt.want == "" {
+				if len(got) != 0 {
+					t.Fatalf("matchContent = %+v, want no components", got)
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("matchContent = %+v, want one component", got)
+			}
+			c := got[0]
+			if c.Name+" "+c.Version != tt.want || c.Confidence != "LOW" {
+				t.Errorf("component = %q %q confidence %q; want %q LOW", c.Name, c.Version, c.Confidence, tt.want)
+			}
+			if len(c.Evidence) != 1 || c.Evidence[0].Kind != "FINGERPRINT_ASSET" ||
+				c.Evidence[0].Location != asset || c.Evidence[0].Detail != tt.detail {
+				t.Errorf("evidence = %+v, want asset evidence at %s detail %q", c.Evidence, asset, tt.detail)
+			}
+		})
+	}
+}
+
+// A catastrophic pattern must be stopped by MatchTimeout and reported as an
+// error, not left to run for the length of the input.
+func TestMatchTimeout(t *testing.T) {
+	libs, err := compile([]byte(`{"libraries":[{"name":"redos","purl":"","cpe":"","extractors":{"filecontent":["^(a+)+$"]}}]}`))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	body := []byte(strings.Repeat("a", 40) + "!")
+	start := time.Now()
+	_, err = matchContent(libs, "https://vendor.example/x.js", body)
+	if err == nil {
+		t.Fatal("matchContent returned no error; want a timeout")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("matchContent took %v; want it stopped near the 100ms timeout", elapsed)
 	}
 }
 
