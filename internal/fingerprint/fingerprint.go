@@ -94,9 +94,14 @@ func compile(data []byte) ([]library, error) {
 	return out, nil
 }
 
+// versionCapture is what the §§version§§ placeholder in a Retire.js pattern
+// stands for: one capture group around a dotted numeric version.
+const versionCapture = `([0-9]+(?:\.[0-9]+)+)`
+
 func compileAll(name, extractor string, patterns []string) ([]*regexp2.Regexp, error) {
 	var out []*regexp2.Regexp
 	for _, p := range patterns {
+		p = strings.ReplaceAll(p, "§§version§§", versionCapture)
 		re, err := regexp2.Compile(p, regexp2.ECMAScript)
 		if err != nil {
 			return nil, fmt.Errorf("fingerprint: %s %s pattern %q: %w", name, extractor, p, err)
