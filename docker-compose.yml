@@ -1,0 +1,39 @@
+# Local dev and the passive-only e2e (test/e2e/run.sh).
+#
+# The vendor network uses the documentation range 198.51.100.0/24, which the
+# SSRF guard (internal/fetch/passive.go, IsPrivate) does not refuse. So both
+# `serve` and the CLI scan fixture-vendor with the guard fully on; no
+# --allow-private is used anywhere in this stack.
+services:
+  touchstone:
+    build: .
+    command: ["serve"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      vendor:
+    depends_on:
+      fixture-vendor:
+        condition: service_healthy
+
+  fixture-vendor:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./test/fixtures/sites:/usr/share/nginx/html:ro
+      - ./test/fixtures/fixture-vendor.conf:/etc/nginx/conf.d/default.conf:ro
+      # The access log the e2e reads; see test/e2e/run.sh.
+      - ./test/e2e/out/access:/var/log/fixture
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    networks:
+      vendor:
+        ipv4_address: 198.51.100.10
+
+networks:
+  vendor:
+    ipam:
+      config:
+        - subnet: 198.51.100.0/24
