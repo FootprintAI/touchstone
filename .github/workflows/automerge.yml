@@ -1,0 +1,34 @@
+# Turns on GitHub auto-merge (squash) for a pull request that the Containarium
+# bot opened, once a person labels it `automerge`. GitHub then merges it as
+# soon as the branch's required status checks pass; this workflow never merges
+# anything itself.
+#
+# Runs from the base branch (pull_request_target) and checks out no pull request
+# code, so a pull request cannot change how it is merged. A pull request that
+# touches .github/ is refused: a workflow change needs a person to merge it.
+name: automerge
+on:
+  pull_request_target:
+    types: [labeled]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  enable:
+    if: >-
+      github.event.label.name == 'automerge' &&
+      github.event.pull_request.user.login == 'containarium-ci[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Refuse a pull request that touches .github/
+        run: |
+          if gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename' | grep -q '^\.github/'; then
+            echo "::error::PR #$PR changes .github/; a person must merge it. Auto-merge not enabled."
+            exit 1
+          fi
+      - name: Enable auto-merge (squash)
+        run: gh pr merge "$PR" --repo "$REPO" --auto --squash
