@@ -133,6 +133,52 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
+func TestNonLoopbackWarning(t *testing.T) {
+	for _, addr := range []string{"127.0.0.1:8080", "[::1]:8080", "localhost:8080"} {
+		if got := nonLoopbackWarning(addr); got != "" {
+			t.Errorf("nonLoopbackWarning(%q) = %q, want no warning", addr, got)
+		}
+	}
+	for _, addr := range []string{"0.0.0.0:8080", "[::]:8080", ":8080", "192.0.2.10:8080", "example.com:8080"} {
+		got := nonLoopbackWarning(addr)
+		if !strings.Contains(got, "warning") || !strings.Contains(got, "no authentication") || !strings.HasSuffix(got, "\n") {
+			t.Errorf("nonLoopbackWarning(%q) = %q, want a warning line", addr, got)
+		}
+	}
+}
+
+// startServe runs serve on addr until it is listening, stops it, and returns
+// what it wrote to stderr.
+func startServe(t *testing.T, addr string) string {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	out, errOut := &syncBuffer{}, &syncBuffer{}
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, []string{"--addr", addr}, out, errOut, fixedStub) }()
+	for !strings.Contains(out.String(), "listening on") {
+		select {
+		case err := <-done:
+			t.Fatalf("serve(%s) exited early: %v", addr, err)
+		default:
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("serve(%s) after cancel: %v", addr, err)
+	}
+	return errOut.String()
+}
+
+func TestServeWarnsOnNonLoopbackBind(t *testing.T) {
+	if got := startServe(t, "127.0.0.1:0"); got != "" {
+		t.Errorf("loopback bind wrote to stderr: %q", got)
+	}
+	if got := startServe(t, "0.0.0.0:0"); !strings.Contains(got, "0.0.0.0:0") || !strings.Contains(got, "no authentication") {
+		t.Errorf("non-loopback bind stderr = %q, want a warning", got)
+	}
+}
+
 func TestServeDefaultAddr(t *testing.T) {
 	t.Setenv("TOUCHSTONE_ADDR", "")
 	if got := envOr("TOUCHSTONE_ADDR", defaultAddr); got != "127.0.0.1:8080" {
