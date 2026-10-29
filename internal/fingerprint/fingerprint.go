@@ -28,6 +28,13 @@ import (
 // and the URLs they run against come from attacker-controlled pages.
 const matchTimeout = 100 * time.Millisecond
 
+// versionPlaceholder marks the version capture in Retire.js patterns;
+// compileAll replaces it with versionCapture, a dotted numeric version.
+const (
+	versionPlaceholder = "§§version§§"
+	versionCapture     = `([0-9]+(?:\.[0-9]+)+)`
+)
+
 //go:embed data/signatures.json
 var signatureData []byte
 
@@ -94,15 +101,10 @@ func compile(data []byte) ([]library, error) {
 	return out, nil
 }
 
-// versionCapture is what the §§version§§ placeholder in a Retire.js pattern
-// stands for: one capture group around a dotted numeric version.
-const versionCapture = `([0-9]+(?:\.[0-9]+)+)`
-
 func compileAll(name, extractor string, patterns []string) ([]*regexp2.Regexp, error) {
 	var out []*regexp2.Regexp
 	for _, p := range patterns {
-		p = strings.ReplaceAll(p, "§§version§§", versionCapture)
-		re, err := regexp2.Compile(p, regexp2.ECMAScript)
+		re, err := regexp2.Compile(strings.ReplaceAll(p, versionPlaceholder, versionCapture), regexp2.ECMAScript)
 		if err != nil {
 			return nil, fmt.Errorf("fingerprint: %s %s pattern %q: %w", name, extractor, p, err)
 		}

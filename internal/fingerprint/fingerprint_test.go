@@ -181,6 +181,35 @@ func TestFromContent(t *testing.T) {
 	}
 }
 
+// The embedded React and Vue patterns use the §§version§§ placeholder, which
+// compileAll must turn into a version capture for them to match at all.
+func TestFromContentReactVue(t *testing.T) {
+	const asset = "https://vendor.example/static/bundle.js"
+	tests := []struct {
+		name string
+		body string
+		want string // "name version"
+	}{
+		{"react license banner", "/** @license React v16.14.0\n * react.production.min.js\n */\n!function(){}();", "react 16.14.0"},
+		{"vue banner", "/*!\n * Vue.js v2.6.14\n * (c) 2014-2021 Evan You\n */\nvar x = 1;", "vue 2.6.14"},
+		{"vue version assignment", "var Vue = {}; Vue.version = '3.2.47';", "vue 3.2.47"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := matchContent(libraries, asset, []byte(tt.body))
+			if err != nil {
+				t.Fatalf("matchContent: %v", err)
+			}
+			if len(got) != 1 {
+				t.Fatalf("matchContent = %+v, want one component", got)
+			}
+			if c := got[0]; c.Name+" "+c.Version != tt.want {
+				t.Errorf("component = %q %q; want %q", c.Name, c.Version, tt.want)
+			}
+		})
+	}
+}
+
 // A catastrophic pattern must be stopped by MatchTimeout and reported as an
 // error, not left to run for the length of the input.
 func TestMatchTimeout(t *testing.T) {
