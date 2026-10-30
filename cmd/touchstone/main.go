@@ -1,8 +1,8 @@
 // Command touchstone scans a vendor URL and prints an evidence-graded
 // ScanReport as protojson (--format json, the default) or as Markdown
 // (--format md), or serves the web page and POST /v1/scans (serve, slice
-// S9). The scan fetches the page and its scripts passively and
-// looks components up in OSV (slice S2).
+// S9). The scan fetches the page and its scripts passively, looks
+// components up in OSV and NVD, and ranks them with KEV and EPSS.
 package main
 
 import (
@@ -30,11 +30,24 @@ type newService func(fetch.Options) touchstonev1.ScanServiceServer
 
 func main() {
 	newSvc := func(o fetch.Options) touchstonev1.ScanServiceServer {
-		return &service.Scanner{Fetch: o, Vulns: vuln.NewOSV()}
+		return &service.Scanner{Fetch: o, Vulns: newMatcher(os.Getenv("NVD_API_KEY"))}
 	}
 	if err := run(context.Background(), os.Args[1:], os.Stdout, newSvc); err != nil {
 		fmt.Fprintln(os.Stderr, "touchstone:", err)
 		os.Exit(2)
+	}
+}
+
+// newMatcher wires the public vulnerability feeds: OSV by purl, NVD by CPE
+// (capped per scan without an API key), then KEV and EPSS. One Matcher
+// serves every scan of the process, so the KEV cache is shared.
+func newMatcher(nvdAPIKey string) *vuln.Matcher {
+	nvd := vuln.NewNVD(nvdAPIKey)
+	return &vuln.Matcher{
+		Purl:      vuln.NewOSV(),
+		CPE:       nvd,
+		CPELimit:  nvd.PerScanLimit(),
+		Enrichers: []vuln.Enricher{vuln.NewKEV(), vuln.NewEPSS()},
 	}
 }
 

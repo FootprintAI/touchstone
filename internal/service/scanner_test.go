@@ -68,16 +68,47 @@ func recordedOSVSite(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func newTestScanner(osvURL string) *Scanner {
+// recordedFeed serves one file recorded in internal/vuln/testdata for a GET
+// of path.
+func recordedFeed(t *testing.T, path, file string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := os.ReadFile(filepath.Join("..", "vuln", "testdata", file))
+		if r.Method != http.MethodGet || r.URL.Path != path || err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(b)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// newTestScanner looks components up in OSV at osvURL and in recorded
+// NVD, KEV and EPSS replies.
+func newTestScanner(t *testing.T, osvURL string) *Scanner {
+	t.Helper()
+	nvd := recordedFeed(t, "/rest/json/cves/2.0", filepath.Join("nvd", "cves-nginx-1.18.0.json"))
+	kev := recordedFeed(t, "/kev.json", filepath.Join("kev", "known_exploited_vulnerabilities.json"))
+	epss := recordedFeed(t, "/data/v1/epss", filepath.Join("epss", "epss.json"))
 	return &Scanner{
 		Fetch: fetch.Options{AllowPrivate: true, Version: ToolVersion},
-		Vulns: &vuln.OSV{BaseURL: osvURL, Client: http.DefaultClient},
+		Vulns: &vuln.Matcher{
+			Purl:     &vuln.OSV{BaseURL: osvURL, Client: http.DefaultClient},
+			CPE:      &vuln.NVD{BaseURL: nvd.URL, Client: http.DefaultClient},
+			CPELimit: vuln.UnauthenticatedNVDLimit,
+			Enrichers: []vuln.Enricher{
+				&vuln.KEV{URL: kev.URL + "/kev.json", Client: http.DefaultClient},
+				&vuln.EPSS{BaseURL: epss.URL, Client: http.DefaultClient},
+			},
+		},
 	}
 }
 
 func TestScannerReportsJQueryWithOSVIDs(t *testing.T) {
 	site := vendorSite(t)
-	rep, err := newTestScanner(recordedOSVSite(t).URL).Scan(context.Background(),
+	rep, err := newTestScanner(t, recordedOSVSite(t).URL).Scan(context.Background(),
 		&touchstonev1.ScanRequest{Url: site.URL + "/"})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
@@ -121,9 +152,55 @@ func TestScannerReportsJQueryWithOSVIDs(t *testing.T) {
 	}
 }
 
+// The test KEV feed lists CVE-2020-11022, so it ranks above
+// CVE-2019-11358 despite the lower EPSS; the nginx banner is matched by
+// CPE in NVD.
+func TestScannerRanksAndEnriches(t *testing.T) {
+	site := vendorSite(t)
+	rep, err := newTestScanner(t, recordedOSVSite(t).URL).Scan(context.Background(),
+		&touchstonev1.ScanRequest{Url: site.URL + "/"})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if rep.GetLookupStatus() != touchstonev1.LookupStatus_LOOKUP_STATUS_COMPLETE {
+		t.Fatalf("lookup_status = %v, want COMPLETE: %v", rep.GetLookupStatus(), rep.GetSources())
+	}
+	byName := map[string]*touchstonev1.Component{}
+	for _, c := range rep.GetComponents() {
+		byName[c.GetName()] = c
+	}
+
+	jq := byName["jquery"].GetVulnerabilities()
+	if len(jq) != 2 {
+		t.Fatalf("jquery vulnerabilities = %v, want 2", jq)
+	}
+	if jq[0].GetId() != "CVE-2020-11022" || !jq[0].GetKev() || jq[0].Epss == nil {
+		t.Errorf("first jquery vulnerability = %v, want the KEV-listed CVE-2020-11022 with an EPSS score", jq[0])
+	}
+	if jq[1].GetId() != "CVE-2019-11358" || jq[1].GetKev() || jq[1].GetEpss() != 0.01422 {
+		t.Errorf("second jquery vulnerability = %v, want CVE-2019-11358, not KEV, EPSS 0.01422", jq[1])
+	}
+
+	ng := byName["nginx"].GetVulnerabilities()
+	if len(ng) != 1 || ng[0].GetId() != "CVE-2021-23017" || ng[0].GetCvssBase() != 7.7 || ng[0].Epss == nil {
+		t.Errorf("nginx vulnerabilities = %v, want CVE-2021-23017 from NVD with CVSS 7.7 and EPSS", ng)
+	}
+
+	var sources []string
+	for _, s := range rep.GetSources() {
+		if !s.GetOk() {
+			t.Errorf("source %s failed: %s", s.GetSource(), s.GetError())
+		}
+		sources = append(sources, s.GetSource())
+	}
+	if strings.Join(sources, ",") != "fingerprint,OSV,NVD,KEV,EPSS" {
+		t.Errorf("sources = %v, want fingerprint,OSV,NVD,KEV,EPSS", sources)
+	}
+}
+
 func TestScannerCheckedListMatchesRequests(t *testing.T) {
 	site := vendorSite(t)
-	rep, err := newTestScanner(recordedOSVSite(t).URL).Scan(context.Background(),
+	rep, err := newTestScanner(t, recordedOSVSite(t).URL).Scan(context.Background(),
 		&touchstonev1.ScanRequest{Url: site.URL + "/"})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
@@ -152,7 +229,7 @@ func TestScannerCheckedListMatchesRequests(t *testing.T) {
 
 func TestScannerRecordsScriptRefusedByBudget(t *testing.T) {
 	site := vendorSite(t)
-	rep, err := newTestScanner(recordedOSVSite(t).URL).Scan(context.Background(),
+	rep, err := newTestScanner(t, recordedOSVSite(t).URL).Scan(context.Background(),
 		&touchstonev1.ScanRequest{Url: site.URL + "/", RequestBudget: 1})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
@@ -172,7 +249,7 @@ func TestScannerRecordsScriptRefusedByBudget(t *testing.T) {
 func TestScannerTargetUnreachable(t *testing.T) {
 	site := httptest.NewServer(http.NotFoundHandler())
 	site.Close()
-	rep, err := newTestScanner(recordedOSVSite(t).URL).Scan(context.Background(),
+	rep, err := newTestScanner(t, recordedOSVSite(t).URL).Scan(context.Background(),
 		&touchstonev1.ScanRequest{Url: site.URL + "/"})
 	if err != nil {
 		t.Fatalf("Scan: an unreachable target is a report, not an RPC error: %v", err)
@@ -188,23 +265,25 @@ func TestScannerTargetUnreachable(t *testing.T) {
 	}
 }
 
-func TestScannerOSVDownIsFailedLookup(t *testing.T) {
+// With OSV down but NVD up, the nginx banner (CPE only) is still looked
+// up, so the report is PARTIAL, never COMPLETE.
+func TestScannerOSVDownIsPartialLookup(t *testing.T) {
 	osv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "down", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(osv.Close)
 	site := vendorSite(t)
-	rep, err := newTestScanner(osv.URL).Scan(context.Background(),
+	rep, err := newTestScanner(t, osv.URL).Scan(context.Background(),
 		&touchstonev1.ScanRequest{Url: site.URL + "/"})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
-	if rep.GetLookupStatus() != touchstonev1.LookupStatus_LOOKUP_STATUS_FAILED {
-		t.Errorf("lookup_status = %v, want FAILED", rep.GetLookupStatus())
+	if rep.GetLookupStatus() != touchstonev1.LookupStatus_LOOKUP_STATUS_PARTIAL {
+		t.Errorf("lookup_status = %v, want PARTIAL", rep.GetLookupStatus())
 	}
 	for _, c := range rep.GetComponents() {
-		if len(c.GetVulnerabilities()) != 0 {
-			t.Errorf("component %s has vulnerabilities despite the failed lookup", c.GetName())
+		if c.GetName() == "jquery" && len(c.GetVulnerabilities()) != 0 {
+			t.Errorf("jquery has vulnerabilities despite the failed OSV lookup")
 		}
 	}
 	var osvStatus *touchstonev1.SourceStatus
@@ -219,7 +298,7 @@ func TestScannerOSVDownIsFailedLookup(t *testing.T) {
 }
 
 func TestScannerRejectsNonHTTPTarget(t *testing.T) {
-	_, err := newTestScanner("http://unused").Scan(context.Background(),
+	_, err := newTestScanner(t, "http://unused").Scan(context.Background(),
 		&touchstonev1.ScanRequest{Url: "ftp://vendor.example/"})
 	if err == nil {
 		t.Fatal("Scan: want an InvalidArgument error for an ftp URL")
