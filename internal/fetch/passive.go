@@ -64,6 +64,9 @@ type Options struct {
 	Version string
 	// Resolver is used for host names; net.DefaultResolver if nil.
 	Resolver Resolver
+	// SuppliedURL is the SBOM/VEX URL the reviewer entered, the only URL
+	// a SUPPLIED request may fetch. Empty means SUPPLIED is refused.
+	SuppliedURL string
 }
 
 // PassiveFetcher is the only Fetcher that talks to a vendor site. It sends
@@ -72,6 +75,7 @@ type Options struct {
 // request (refused ones included) for the report's checked list.
 type PassiveFetcher struct {
 	target    *url.URL
+	supplied  string
 	userAgent string
 	client    *http.Client
 
@@ -112,8 +116,18 @@ func New(target string, opts Options) (*PassiveFetcher, error) {
 		resolver = net.DefaultResolver
 	}
 
+	var supplied string
+	if opts.SuppliedURL != "" {
+		s, err := parseHTTPURL(opts.SuppliedURL)
+		if err != nil {
+			return nil, err
+		}
+		supplied = s.String()
+	}
+
 	f := &PassiveFetcher{
 		target:    t,
+		supplied:  supplied,
 		userAgent: "Touchstone/" + version + " (+https://github.com/FootprintAI/touchstone)",
 		timeout:   RequestTimeout,
 		budget:    budget,
@@ -218,6 +232,10 @@ func (f *PassiveFetcher) allow(rawURL string, reason Reason) (*url.URL, error) {
 	case ReasonDiscoveryPath:
 		if !sameOrigin(u, f.target) || u.RawQuery != "" || !slices.Contains(DiscoveryPaths, u.EscapedPath()) {
 			return nil, fmt.Errorf("%w: %s is not a discovery path on %s", ErrRefused, u, origin(f.target))
+		}
+	case ReasonSupplied:
+		if f.supplied == "" || u.String() != f.supplied {
+			return nil, fmt.Errorf("%w: SUPPLIED must be the reviewer's SBOM/VEX URL, got %s", ErrRefused, u)
 		}
 	case ReasonSubresource, ReasonDeclared:
 		// Taken from a fetched document by the caller; nothing to check

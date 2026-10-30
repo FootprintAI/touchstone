@@ -1,8 +1,10 @@
 // Command touchstone scans a vendor URL and prints an evidence-graded
 // ScanReport as protojson (--format json, the default) or as Markdown
 // (--format md), or serves the web page and POST /v1/scans (serve, slice
-// S9). The scan fetches the page and its scripts passively, looks
-// components up in OSV and NVD, and ranks them with KEV and EPSS.
+// S9). The scan fetches the page and its scripts passively, follows the
+// vendor's security.txt and CSAF VEX documents, reads an SBOM/VEX the
+// reviewer supplies (--sbom, --sbom-url), looks components up in OSV and
+// NVD, and ranks them with KEV and EPSS.
 package main
 
 import (
@@ -21,7 +23,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const usage = "usage: touchstone scan [--allow-private] [--format json|md] <url>\n       touchstone serve [--addr host:port]"
+const usage = "usage: touchstone scan [--allow-private] [--format json|md] [--sbom file] [--sbom-url url] <url>\n       touchstone serve [--addr host:port]"
 
 // newService builds the ScanService for one CLI invocation. The fetch
 // options carry CLI-only settings such as --allow-private, which the
@@ -62,6 +64,8 @@ func run(ctx context.Context, args []string, out io.Writer, newSvc newService) e
 	fs.SetOutput(io.Discard)
 	allowPrivate := fs.Bool("allow-private", false, "allow fetching loopback and private addresses (local fixtures only)")
 	format := fs.String("format", "json", "output format: json (protojson) or md (Markdown)")
+	sbomFile := fs.String("sbom", "", "an SBOM/VEX file you already have (CycloneDX, SPDX, OpenVEX or CSAF JSON)")
+	sbomURL := fs.String("sbom-url", "", "the URL of an SBOM/VEX document you already have")
 	if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 1 {
 		return errors.New(usage)
 	}
@@ -69,8 +73,14 @@ func run(ctx context.Context, args []string, out io.Writer, newSvc newService) e
 	if err != nil {
 		return err
 	}
+	req := &touchstonev1.ScanRequest{Url: fs.Arg(0), SbomUrl: *sbomURL}
+	if *sbomFile != "" {
+		if req.SbomDocument, err = os.ReadFile(*sbomFile); err != nil {
+			return fmt.Errorf("--sbom: %w", err)
+		}
+	}
 	svc := newSvc(fetch.Options{AllowPrivate: *allowPrivate, Version: service.ToolVersion})
-	rep, err := svc.Scan(ctx, &touchstonev1.ScanRequest{Url: fs.Arg(0)})
+	rep, err := svc.Scan(ctx, req)
 	if err != nil {
 		return err
 	}

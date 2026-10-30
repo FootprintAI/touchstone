@@ -85,6 +85,8 @@ func TestAllowReason(t *testing.T) {
 		{"discovery unknown path", srv.URL + "/.env", ReasonDiscoveryPath, true},
 		{"discovery with query", srv.URL + "/.well-known/security.txt?x=1", ReasonDiscoveryPath, true},
 		{"discovery other origin", "https://other.example/.well-known/security.txt", ReasonDiscoveryPath, true},
+		{"supplied", srv.URL + "/sbom.json", ReasonSupplied, false},
+		{"supplied other URL", srv.URL + "/other.json", ReasonSupplied, true},
 		{"forge api reason", srv.URL + "/repos/x", Reason("FORGE_API"), true},
 		{"empty reason", srv.URL + "/x", Reason(""), true},
 		{"unknown reason", srv.URL + "/x", Reason("CRAWL"), true},
@@ -93,7 +95,7 @@ func TestAllowReason(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f := mustNew(t, target, Options{AllowPrivate: true})
+			f := mustNew(t, target, Options{AllowPrivate: true, SuppliedURL: srv.URL + "/sbom.json"})
 			before := s.count()
 			_, err := f.Get(context.Background(), tt.url, tt.reason)
 			got := lastChecked(t, f)
@@ -122,6 +124,17 @@ func TestAllowReason(t *testing.T) {
 				t.Errorf("result = %v, want RESULT_FOUND", got.GetResult())
 			}
 		})
+	}
+}
+
+func TestSuppliedRefusedWithoutSuppliedURL(t *testing.T) {
+	srv, s := okServer(t)
+	f := mustNew(t, srv.URL+"/", Options{AllowPrivate: true})
+	if _, err := f.Get(context.Background(), srv.URL+"/sbom.json", ReasonSupplied); !errors.Is(err, ErrRefused) {
+		t.Fatalf("Get: err = %v, want ErrRefused", err)
+	}
+	if s.count() != 0 {
+		t.Error("refused request reached the server")
 	}
 }
 

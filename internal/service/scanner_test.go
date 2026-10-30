@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -193,8 +194,8 @@ func TestScannerRanksAndEnriches(t *testing.T) {
 		}
 		sources = append(sources, s.GetSource())
 	}
-	if strings.Join(sources, ",") != "fingerprint,OSV,NVD,KEV,EPSS" {
-		t.Errorf("sources = %v, want fingerprint,OSV,NVD,KEV,EPSS", sources)
+	if strings.Join(sources, ",") != "fingerprint,discover,OSV,NVD,KEV,EPSS" {
+		t.Errorf("sources = %v, want fingerprint,discover,OSV,NVD,KEV,EPSS", sources)
 	}
 }
 
@@ -206,17 +207,23 @@ func TestScannerCheckedListMatchesRequests(t *testing.T) {
 		t.Fatalf("Scan: %v", err)
 	}
 	checked := rep.GetChecked()
-	if len(checked) != 2 {
-		t.Fatalf("checked = %v, want the target and the script", checked)
+	want := []struct {
+		url, reason string
+		result      touchstonev1.CheckedLocation_Result
+	}{
+		{site.URL + "/", "TARGET", touchstonev1.CheckedLocation_RESULT_FOUND},
+		{site.URL + "/js/jquery-1.12.4.min.js", "SUBRESOURCE", touchstonev1.CheckedLocation_RESULT_FOUND},
+		{site.URL + "/.well-known/security.txt", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_NOT_FOUND},
+		{site.URL + "/security.txt", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_NOT_FOUND},
+		{site.URL + "/.well-known/csaf/provider-metadata.json", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_NOT_FOUND},
+		{site.URL + "/.well-known/tea", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_NOT_FOUND},
 	}
-	want := []struct{ url, reason string }{
-		{site.URL + "/", "TARGET"},
-		{site.URL + "/js/jquery-1.12.4.min.js", "SUBRESOURCE"},
+	if len(checked) != len(want) {
+		t.Fatalf("checked = %v, want the target, the script and the four discovery paths", checked)
 	}
 	for i, w := range want {
-		if checked[i].GetUrl() != w.url || checked[i].GetReason() != w.reason ||
-			checked[i].GetResult() != touchstonev1.CheckedLocation_RESULT_FOUND {
-			t.Errorf("checked[%d] = %v, want %s %s FOUND", i, checked[i], w.reason, w.url)
+		if checked[i].GetUrl() != w.url || checked[i].GetReason() != w.reason || checked[i].GetResult() != w.result {
+			t.Errorf("checked[%d] = %v, want %s %s %v", i, checked[i], w.reason, w.url, w.result)
 		}
 	}
 	if rep.GetRequestsUsed() != uint32(len(checked)) {
@@ -235,8 +242,13 @@ func TestScannerRecordsScriptRefusedByBudget(t *testing.T) {
 		t.Fatalf("Scan: %v", err)
 	}
 	checked := rep.GetChecked()
-	if len(checked) != 2 || checked[1].GetResult() != touchstonev1.CheckedLocation_RESULT_REFUSED {
-		t.Fatalf("checked = %v, want the script refused by the budget", checked)
+	if len(checked) != 6 {
+		t.Fatalf("checked = %v, want the target, the script and the four discovery paths", checked)
+	}
+	for _, c := range checked[1:] {
+		if c.GetResult() != touchstonev1.CheckedLocation_RESULT_REFUSED {
+			t.Errorf("checked %v, want it refused by the budget", c)
+		}
 	}
 	if rep.GetRequestsUsed() != 1 {
 		t.Errorf("requests_used = %d, want 1", rep.GetRequestsUsed())
@@ -294,6 +306,180 @@ func TestScannerOSVDownIsPartialLookup(t *testing.T) {
 	}
 	if osvStatus == nil || osvStatus.GetOk() || osvStatus.GetError() == "" {
 		t.Errorf("OSV source status = %v, want ok=false with an error", osvStatus)
+	}
+}
+
+// csafSite is vendorSite plus a security.txt whose CSAF field names
+// provider metadata with one ROLIE feed listing one CSAF VEX document. The
+// VEX document names the jQuery the page loads.
+func csafSite(t *testing.T) *httptest.Server {
+	t.Helper()
+	var base string
+	docs := map[string]string{}
+	docs["/.well-known/security.txt"] = "Contact: mailto:psirt@vendor.example\nCSAF: {base}/csaf/provider-metadata.json\n"
+	docs["/csaf/provider-metadata.json"] = `{"canonical_url": "{base}/csaf/provider-metadata.json", "metadata_version": "2.0",
+		"distributions": [{"rolie": {"feeds": [{"tlp_label": "WHITE", "url": "{base}/csaf/feed.json"}]}}]}`
+	docs["/csaf/feed.json"] = `{"feed": {"entry": [{"updated": "2026-10-01T00:00:00Z", "content": {"src": "{base}/csaf/vex-1.json"}}]}}`
+	docs["/csaf/vex-1.json"] = `{"document": {"category": "csaf_vex", "csaf_version": "2.0"},
+		"product_tree": {"full_product_names": [{"product_id": "P1", "name": "jQuery 1.12.4",
+			"product_identification_helper": {"purl": "pkg:npm/jquery@1.12.4"}}]}}`
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if body, ok := docs[r.URL.Path]; ok {
+			_, _ = w.Write([]byte(strings.ReplaceAll(body, "{base}", base)))
+			return
+		}
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(fixturePage))
+	})
+	mux.HandleFunc("/js/jquery-1.12.4.min.js", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("/*! jQuery v1.12.4 */"))
+	})
+	srv := httptest.NewServer(mux)
+	base = srv.URL
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestScannerDiscoversCSAFVEX(t *testing.T) {
+	site := csafSite(t)
+	rep, err := newTestScanner(t, recordedOSVSite(t).URL).Scan(context.Background(),
+		&touchstonev1.ScanRequest{Url: site.URL + "/"})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+
+	want := []struct {
+		url, reason string
+		result      touchstonev1.CheckedLocation_Result
+	}{
+		{site.URL + "/", "TARGET", touchstonev1.CheckedLocation_RESULT_FOUND},
+		{site.URL + "/js/jquery-1.12.4.min.js", "SUBRESOURCE", touchstonev1.CheckedLocation_RESULT_FOUND},
+		{site.URL + "/.well-known/security.txt", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_FOUND},
+		{site.URL + "/.well-known/csaf/provider-metadata.json", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_NOT_FOUND},
+		{site.URL + "/.well-known/tea", "DISCOVERY_PATH", touchstonev1.CheckedLocation_RESULT_NOT_FOUND},
+		{site.URL + "/csaf/provider-metadata.json", "DECLARED", touchstonev1.CheckedLocation_RESULT_FOUND},
+		{site.URL + "/csaf/feed.json", "DECLARED", touchstonev1.CheckedLocation_RESULT_FOUND},
+		{site.URL + "/csaf/vex-1.json", "DECLARED", touchstonev1.CheckedLocation_RESULT_FOUND},
+	}
+	checked := rep.GetChecked()
+	if len(checked) != len(want) {
+		t.Fatalf("checked = %v, want %d locations", checked, len(want))
+	}
+	for i, w := range want {
+		if checked[i].GetUrl() != w.url || checked[i].GetReason() != w.reason || checked[i].GetResult() != w.result {
+			t.Errorf("checked[%d] = %v, want %s %s %v", i, checked[i], w.reason, w.url, w.result)
+		}
+	}
+
+	var jq *touchstonev1.Component
+	for _, c := range rep.GetComponents() {
+		if c.GetPurl() == "pkg:npm/jquery@1.12.4" {
+			jq = c
+		}
+	}
+	if jq == nil {
+		t.Fatalf("no jquery component in %v", rep.GetComponents())
+	}
+	if jq.GetConfidence() != touchstonev1.Confidence_CONFIDENCE_HIGH {
+		t.Errorf("confidence = %v, want HIGH from the CSAF VEX document", jq.GetConfidence())
+	}
+	var kinds []touchstonev1.EvidenceKind
+	for _, e := range jq.GetEvidence() {
+		kinds = append(kinds, e.GetKind())
+	}
+	wantKinds := []touchstonev1.EvidenceKind{
+		touchstonev1.EvidenceKind_EVIDENCE_KIND_VEX, touchstonev1.EvidenceKind_EVIDENCE_KIND_FINGERPRINT_ASSET,
+	}
+	if !slices.Equal(kinds, wantKinds) {
+		t.Errorf("evidence kinds = %v, want %v (both tiers kept)", kinds, wantKinds)
+	}
+	for _, s := range rep.GetSources() {
+		if s.GetSource() == "discover" && !s.GetOk() {
+			t.Errorf("discover source failed: %s", s.GetError())
+		}
+	}
+}
+
+const suppliedCycloneDX = `{"bomFormat": "CycloneDX", "specVersion": "1.6",
+  "components": [{"name": "jquery", "version": "1.12.4", "purl": "pkg:npm/jquery@1.12.4"}]}`
+
+func TestScannerReadsUploadedSBOM(t *testing.T) {
+	site := vendorSite(t)
+	rep, err := newTestScanner(t, recordedOSVSite(t).URL).Scan(context.Background(),
+		&touchstonev1.ScanRequest{Url: site.URL + "/", SbomDocument: []byte(suppliedCycloneDX)})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	jq := rep.GetComponents()[0]
+	if jq.GetPurl() != "pkg:npm/jquery@1.12.4" || jq.GetConfidence() != touchstonev1.Confidence_CONFIDENCE_HIGH {
+		t.Fatalf("first component = %v, want jquery at HIGH confidence", jq)
+	}
+	first := jq.GetEvidence()[0]
+	if first.GetKind() != touchstonev1.EvidenceKind_EVIDENCE_KIND_SBOM_SUPPLIED || first.GetLocation() != UploadedLocation ||
+		first.GetDetail() != "CycloneDX" {
+		t.Errorf("evidence = %v, want SBOM_SUPPLIED from the upload", first)
+	}
+	var supplied *touchstonev1.SourceStatus
+	for _, s := range rep.GetSources() {
+		if s.GetSource() == "supplied" {
+			supplied = s
+		}
+	}
+	if supplied == nil || !supplied.GetOk() {
+		t.Errorf("supplied source status = %v, want ok", supplied)
+	}
+}
+
+func TestScannerFetchesSuppliedSBOMURL(t *testing.T) {
+	site := vendorSite(t)
+	sbomSite := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(suppliedCycloneDX))
+	}))
+	t.Cleanup(sbomSite.Close)
+	sbomURL := sbomSite.URL + "/vendor-sbom.json"
+
+	rep, err := newTestScanner(t, recordedOSVSite(t).URL).Scan(context.Background(),
+		&touchstonev1.ScanRequest{Url: site.URL + "/", SbomUrl: sbomURL})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	checked := rep.GetChecked()
+	last := checked[len(checked)-1]
+	if last.GetUrl() != sbomURL || last.GetReason() != "SUPPLIED" || last.GetResult() != touchstonev1.CheckedLocation_RESULT_FOUND {
+		t.Errorf("last checked = %v, want the supplied SBOM URL, SUPPLIED, FOUND", last)
+	}
+	jq := rep.GetComponents()[0]
+	if jq.GetConfidence() != touchstonev1.Confidence_CONFIDENCE_HIGH ||
+		jq.GetEvidence()[0].GetKind() != touchstonev1.EvidenceKind_EVIDENCE_KIND_SBOM_SUPPLIED ||
+		jq.GetEvidence()[0].GetLocation() != sbomURL {
+		t.Errorf("first component = %v, want jquery at HIGH with SBOM_SUPPLIED evidence from %s", jq, sbomURL)
+	}
+}
+
+func TestScannerReportsUnreadableSupplied(t *testing.T) {
+	site := vendorSite(t)
+	rep, err := newTestScanner(t, recordedOSVSite(t).URL).Scan(context.Background(),
+		&touchstonev1.ScanRequest{Url: site.URL + "/", SbomDocument: []byte("<bom/>")})
+	if err != nil {
+		t.Fatalf("Scan: an unreadable SBOM is a source failure, not an RPC error: %v", err)
+	}
+	for _, s := range rep.GetSources() {
+		if s.GetSource() == "supplied" && (s.GetOk() || s.GetError() == "") {
+			t.Errorf("supplied source status = %v, want ok=false with an error", s)
+		}
+	}
+}
+
+func TestScannerRejectsBadSBOMURL(t *testing.T) {
+	_, err := newTestScanner(t, "http://unused").Scan(context.Background(),
+		&touchstonev1.ScanRequest{Url: "https://vendor.example/", SbomUrl: "file:///etc/passwd"})
+	if err == nil {
+		t.Fatal("Scan: want an InvalidArgument error for a file: sbom_url")
 	}
 }
 
