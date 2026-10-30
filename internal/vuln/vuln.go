@@ -1,8 +1,7 @@
-// Package vuln defines the Source and Enricher seams used to look up and
-// enrich vulnerabilities for a component. Real implementations (OSV, NVD,
-// KEV, EPSS; see docs/architecture/touchstone.md) land in slice S3; this
-// package only fixes the interfaces so S0 callers and their tests can be
-// written against them now.
+// Package vuln looks up and enriches vulnerabilities for components: the
+// Source seam (OSV by purl, NVD by CPE), the Enricher seam (KEV, EPSS),
+// Rank, and the Matcher that combines them and decides the lookup status
+// (see docs/architecture/touchstone.md).
 package vuln
 
 import "context"

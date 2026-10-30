@@ -19,9 +19,9 @@ import (
 
 // Scanner is the walking-skeleton ScanService (slice S2). It fetches the
 // target page and the scripts it loads through a PassiveFetcher,
-// fingerprints them, looks each purl up through vuln.Source, and returns
-// the report. Merging across tiers and the NVD, KEV and EPSS lookups come
-// in later slices.
+// fingerprints them, looks each component up through vuln.Matcher (OSV by
+// purl, NVD by CPE, enriched with KEV and EPSS), and returns the report.
+// Merging across tiers comes in a later slice.
 type Scanner struct {
 	touchstonev1.UnimplementedScanServiceServer
 
@@ -30,8 +30,8 @@ type Scanner struct {
 	// ScanRequest.
 	Fetch fetch.Options
 
-	// Vulns looks components up by purl (OSV in the CLI).
-	Vulns vuln.Source
+	// Vulns looks components up and ranks their vulnerabilities.
+	Vulns *vuln.Matcher
 
 	// Now returns the scan's start and completion time; time.Now if nil.
 	Now func() time.Time
@@ -126,38 +126,27 @@ func collect(ctx context.Context, f fetch.Fetcher, page *fetch.Response) ([]pipe
 	return merge(comps), errors.Join(errs...)
 }
 
-// lookup asks vuln.Source about every component that has a purl and
-// converts the components to proto. It returns the lookup status, which is
-// COMPLETE only if every lookup succeeded.
+// lookup asks the Matcher about every component (by purl, else CPE) and
+// converts the components, with their ranked vulnerabilities, to proto.
+// It returns the lookup status, which is COMPLETE only if every lookup
+// and enrichment succeeded.
 func (s *Scanner) lookup(ctx context.Context, rep *touchstonev1.ScanReport, comps []pipeline.Component) (touchstonev1.LookupStatus, []*touchstonev1.Component) {
-	var out []*touchstonev1.Component
-	var ok, failed int
-	var errs []error
-	for _, c := range comps {
-		var findings []vuln.Finding
-		if c.Purl != "" {
-			var err error
-			findings, err = s.Vulns.Lookup(ctx, []vuln.Query{{Purl: c.Purl}})
-			if err != nil {
-				failed++
-				errs = append(errs, err)
-			} else {
-				ok++
-			}
-		}
-		out = append(out, toProto(c, findings))
+	queries := make([]vuln.Query, len(comps))
+	for i, c := range comps {
+		queries[i] = vuln.Query{Purl: c.Purl, CPE: c.CPE}
 	}
-	if ok+failed > 0 {
-		rep.Sources = append(rep.Sources, &touchstonev1.SourceStatus{
-			Source: s.Vulns.Name(),
-			Ok:     failed == 0,
-			Error:  errText(errors.Join(errs...)),
-		})
+	res := s.Vulns.Match(ctx, queries)
+	for _, st := range res.Sources {
+		rep.Sources = append(rep.Sources, &touchstonev1.SourceStatus{Source: st.Source, Ok: st.OK, Error: st.Error})
 	}
-	switch {
-	case failed == 0:
+	out := make([]*touchstonev1.Component, len(comps))
+	for i, c := range comps {
+		out[i] = toProto(c, res.Matches[i])
+	}
+	switch res.Status {
+	case vuln.StatusComplete:
 		return touchstonev1.LookupStatus_LOOKUP_STATUS_COMPLETE, out
-	case ok > 0:
+	case vuln.StatusPartial:
 		return touchstonev1.LookupStatus_LOOKUP_STATUS_PARTIAL, out
 	default:
 		return touchstonev1.LookupStatus_LOOKUP_STATUS_FAILED, out
@@ -199,7 +188,7 @@ func merge(comps []pipeline.Component) []pipeline.Component {
 
 // toProto converts one component. The pipeline's Confidence and Kind
 // strings are the proto enum names without their type prefix.
-func toProto(c pipeline.Component, findings []vuln.Finding) *touchstonev1.Component {
+func toProto(c pipeline.Component, matches []vuln.Match) *touchstonev1.Component {
 	out := &touchstonev1.Component{
 		Name:       c.Name,
 		Version:    c.Version,
@@ -215,11 +204,14 @@ func toProto(c pipeline.Component, findings []vuln.Finding) *touchstonev1.Compon
 			Detail:   e.Detail,
 		})
 	}
-	for _, f := range findings {
+	for _, m := range matches {
 		out.Vulnerabilities = append(out.Vulnerabilities, &touchstonev1.Vulnerability{
-			Id:      f.ID,
-			Aliases: f.Aliases,
-			Summary: f.Summary,
+			Id:       m.ID,
+			Aliases:  m.Aliases,
+			Summary:  m.Summary,
+			Kev:      m.KEV,
+			Epss:     m.EPSS,
+			CvssBase: m.CVSSBase,
 		})
 	}
 	return out

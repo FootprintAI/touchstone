@@ -65,7 +65,7 @@ type osvVuln struct {
 }
 
 // Lookup returns the advisories for every query that carries a purl. CPE
-// queries are ignored (NVD handles those, slice S3). Advisories are fetched
+// queries are ignored (NVD handles those). Advisories are fetched
 // with one querybatch call, then one GET per distinct id for details.
 func (o *OSV) Lookup(ctx context.Context, queries []Query) ([]Finding, error) {
 	var req osvBatchRequest
