@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -7,12 +6,11 @@ import {
   ScanReportSchema,
   ScanStatus,
 } from "./gen/touchstone/v1/scan_pb";
+import { goldenText } from "./test/golden";
 
 // Written by the Go CLI test (go test ./cmd/touchstone -update), so drift
 // between the Go and TS sides of scan.proto fails one of the two suites.
-const golden = JSON.parse(
-  readFileSync(new URL("../../testdata/report.golden.json", import.meta.url), "utf8"),
-) as JsonValue;
+const golden = JSON.parse(goldenText) as JsonValue;
 
 describe("ScanReport golden", () => {
   it("decodes with the generated parser", () => {

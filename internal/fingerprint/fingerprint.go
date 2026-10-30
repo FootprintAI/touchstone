@@ -6,7 +6,9 @@ package fingerprint
 
 import (
 	"bytes"
+	"crypto/sha1"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,16 +38,21 @@ type signatureFile struct {
 		Purl       string `json:"purl"`
 		CPE        string `json:"cpe"`
 		Extractors struct {
-			URI      []string `json:"uri"`
-			Filename []string `json:"filename"`
+			URI         []string          `json:"uri"`
+			Filename    []string          `json:"filename"`
+			FileContent []string          `json:"filecontent"`
+			Hashes      map[string]string `json:"hashes"`
 		} `json:"extractors"`
 	} `json:"libraries"`
 }
 
-// library is one compiled signature entry.
+// library is one compiled signature entry. hashes maps the lower-case hex
+// SHA-1 of a whole asset to the version it is.
 type library struct {
 	name, purl, cpe string
 	uri, filename   []*regexp2.Regexp
+	filecontent     []*regexp2.Regexp
+	hashes          map[string]string
 }
 
 // libraries is compiled once at start-up from the embedded signatures. A
@@ -68,13 +75,19 @@ func compile(data []byte) ([]library, error) {
 	}
 	var out []library
 	for _, l := range sf.Libraries {
-		lib := library{name: l.Name, purl: l.Purl, cpe: l.CPE}
+		lib := library{name: l.Name, purl: l.Purl, cpe: l.CPE, hashes: map[string]string{}}
 		var err error
 		if lib.uri, err = compileAll(l.Name, "uri", l.Extractors.URI); err != nil {
 			return nil, err
 		}
 		if lib.filename, err = compileAll(l.Name, "filename", l.Extractors.Filename); err != nil {
 			return nil, err
+		}
+		if lib.filecontent, err = compileAll(l.Name, "filecontent", l.Extractors.FileContent); err != nil {
+			return nil, err
+		}
+		for digest, version := range l.Extractors.Hashes {
+			lib.hashes[strings.ToLower(digest)] = version
 		}
 		out = append(out, lib)
 	}
@@ -131,6 +144,45 @@ func FromURL(assetURL string) ([]pipeline.Component, error) {
 	return out, errors.Join(errs...)
 }
 
+// FromContent matches the bytes of a script that FromURL did not recognise:
+// the filecontent extractors run over the text, and the hashes extractors
+// over the SHA-1 of the whole asset. Each library it recognises yields one
+// Low-confidence component, with the asset URL as evidence.
+func FromContent(assetURL string, body []byte) ([]pipeline.Component, error) {
+	return matchContent(libraries, assetURL, body)
+}
+
+func matchContent(libs []library, assetURL string, body []byte) ([]pipeline.Component, error) {
+	sum := sha1.Sum(body)
+	digest := hex.EncodeToString(sum[:])
+	text := string(body)
+	var out []pipeline.Component
+	var errs []error
+	for _, lib := range libs {
+		if version, ok := lib.hashes[digest]; ok {
+			c := lib.component(version)
+			c.Evidence = []pipeline.Evidence{{Kind: "FINGERPRINT_ASSET", Location: assetURL, Detail: "sha1 " + digest}}
+			out = append(out, c)
+			continue
+		}
+		c, ok, err := lib.match(text, lib.filecontent)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		c.Evidence = []pipeline.Evidence{{
+			Kind:     "FINGERPRINT_ASSET",
+			Location: assetURL,
+			Detail:   c.Evidence[0].Detail,
+		}}
+		out = append(out, c)
+	}
+	return out, errors.Join(errs...)
+}
+
 // match runs res against input and, on the first hit, builds a component
 // with the captured version. The evidence detail is the matched text.
 func (l library) match(input string, res []*regexp2.Regexp) (pipeline.Component, bool, error) {
@@ -142,18 +194,23 @@ func (l library) match(input string, res []*regexp2.Regexp) (pipeline.Component,
 		if m == nil {
 			continue
 		}
-		version := m.GroupByNumber(1).String()
-		c := pipeline.Component{
-			Name:       l.name,
-			Version:    version,
-			Purl:       strings.ReplaceAll(l.purl, "{version}", version),
-			CPE:        strings.ReplaceAll(l.cpe, "{version}", version),
-			Confidence: "LOW",
-			Evidence:   []pipeline.Evidence{{Detail: m.String()}},
-		}
+		c := l.component(m.GroupByNumber(1).String())
+		c.Evidence = []pipeline.Evidence{{Detail: m.String()}}
 		return c, true, nil
 	}
 	return pipeline.Component{}, false, nil
+}
+
+// component builds the library's component at version, with its purl and
+// CPE filled in. The caller adds the evidence.
+func (l library) component(version string) pipeline.Component {
+	return pipeline.Component{
+		Name:       l.name,
+		Version:    version,
+		Purl:       strings.ReplaceAll(l.purl, "{version}", version),
+		CPE:        strings.ReplaceAll(l.cpe, "{version}", version),
+		Confidence: "LOW",
+	}
 }
 
 // headerRule maps one response header value to a component. Banners
@@ -169,6 +226,7 @@ type headerRule struct {
 var headerRules = []headerRule{
 	{"Server", regexp.MustCompile(`^Apache/([0-9]+(?:\.[0-9]+)+)`), "apache http_server", "cpe:2.3:a:apache:http_server:%s:*:*:*:*:*:*:*"},
 	{"Server", regexp.MustCompile(`^nginx/([0-9]+(?:\.[0-9]+)+)`), "nginx", "cpe:2.3:a:f5:nginx:%s:*:*:*:*:*:*:*"},
+	{"Server", regexp.MustCompile(`^Microsoft-IIS/([0-9]+(?:\.[0-9]+)+)`), "iis", "cpe:2.3:a:microsoft:internet_information_services:%s:*:*:*:*:*:*:*"},
 	{"X-Powered-By", regexp.MustCompile(`^PHP/([0-9]+(?:\.[0-9]+)+)`), "php", "cpe:2.3:a:php:php:%s:*:*:*:*:*:*:*"},
 }
 

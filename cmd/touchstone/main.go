@@ -1,8 +1,9 @@
 // Command touchstone scans a vendor URL and prints an evidence-graded
 // ScanReport as protojson (--format json, the default) or as Markdown
-// (--format md). The scan fetches the page and its scripts passively and
-// looks components up in OSV (by purl) and NVD (by CPE), enriched with KEV
-// and EPSS.
+// (--format md), or serves the web page and POST /v1/scans (serve, slice
+// S9). The scan fetches the page and its scripts passively and looks
+// components up in OSV (by purl) and NVD (by CPE), enriched with KEV and
+// EPSS.
 package main
 
 import (
@@ -21,7 +22,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const usage = "usage: touchstone scan [--allow-private] [--format json|md] <url>"
+const usage = "usage: touchstone scan [--allow-private] [--format json|md] <url>\n       touchstone serve [--addr host:port]"
 
 // newService builds the ScanService for one CLI invocation. The fetch
 // options carry CLI-only settings such as --allow-private, which the
@@ -48,6 +49,9 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, out io.Writer, newSvc newService) error {
+	if len(args) > 0 && args[0] == "serve" {
+		return serve(ctx, args[1:], out, os.Stderr, newSvc)
+	}
 	if len(args) == 0 || args[0] != "scan" {
 		return errors.New(usage)
 	}

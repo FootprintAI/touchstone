@@ -1,1 +1,8 @@
 node_modules/
+# next build output and its generated type shim; web/out is embedded at build time
+web/.next/
+web/next-env.d.ts
+web/out/*
+!web/out/.gitkeep
+# e2e output (test/e2e/run.sh): reports, access log, compose logs
+test/e2e/out/

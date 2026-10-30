@@ -120,10 +120,18 @@ func collect(ctx context.Context, f fetch.Fetcher, page *fetch.Response) ([]pipe
 			continue
 		}
 		found, err := fingerprint.FromURL(src)
-		comps = append(comps, found...)
 		if err != nil {
 			errs = append(errs, err)
 		}
+		if len(found) == 0 {
+			// Content is matched only when the URL names no library, so one
+			// script yields at most one match per library.
+			found, err = fingerprint.FromContent(src, resp.Body)
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+		comps = append(comps, found...)
 	}
 	return merge(comps), errors.Join(errs...)
 }

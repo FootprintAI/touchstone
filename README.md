@@ -34,6 +34,23 @@ stale. `make test` and `make web-test` run the Go and web suites. See the design
 [`docs/architecture/touchstone.md`](docs/architecture/touchstone.md) and
 the PRD at [`docs/product/touchstone.md`](docs/product/touchstone.md).
 
+### Web page: `touchstone serve`
+
+`touchstone serve` runs the web page and `POST /v1/scans` on one port.
+
+```sh
+make web-build          # exports the page to web/out
+go build ./cmd/touchstone
+./touchstone serve --addr 127.0.0.1:8080
+```
+
+- `--addr host:port` sets the listen address. The default is `127.0.0.1:8080`.
+- `TOUCHSTONE_ADDR` sets the same address from the environment. The flag wins when both are set.
+- Run `make web-build` before `go build`. The page is embedded at build time, so a binary built
+  without it serves 404 at `/`.
+- The server has no authentication. When the address is not loopback (for example `0.0.0.0:8080`
+  or `:8080`), `serve` prints a warning on stderr. Bind to `127.0.0.1` unless you mean to expose it.
+
 ## License
 
 Apache 2.0, see [LICENSE](LICENSE).
