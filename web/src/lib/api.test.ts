@@ -30,7 +30,10 @@ describe("requestScan", () => {
       {
         url: "https://example.com",
         sbomUrl: "https://example.com/sbom.json",
-        sbomDocument: new TextEncoder().encode("{}"),
+        // "{}" as bytes. Not TextEncoder: under jsdom it returns a Uint8Array from
+        // another realm, which protobuf's instanceof check rejects. The page wraps
+        // the FileReader result in this realm's Uint8Array, as here.
+        sbomDocument: Uint8Array.from([0x7b, 0x7d]),
       },
       fetchFn,
     );
