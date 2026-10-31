@@ -42,6 +42,42 @@ describe("ScanPage", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ url: "https://example.com" }));
   });
 
+  it("sends a supplied SBOM/VEX URL with the scan", async () => {
+    const fetchMock = stubFetch(async () => new Response(goldenText, { status: 200 }));
+    render(<ScanPage />);
+
+    fireEvent.change(screen.getByLabelText("SBOM/VEX URL"), { target: { value: " https://example.com/sbom.json " } });
+    scanFor("https://example.com");
+
+    await screen.findByRole("region", { name: "Low confidence" });
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({ url: "https://example.com", sbomUrl: "https://example.com/sbom.json" }),
+    );
+  });
+
+  it("refuses an SBOM/VEX URL that is not http(s) without sending a request", () => {
+    const fetchMock = stubFetch(async () => new Response(goldenText));
+    render(<ScanPage />);
+
+    fireEvent.change(screen.getByLabelText("SBOM/VEX URL"), { target: { value: "file:///sbom.json" } });
+    scanFor("https://example.com");
+
+    expect(screen.getByText(/URL for the SBOM\/VEX/)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("uploads a chosen SBOM/VEX file as sbomDocument", async () => {
+    const fetchMock = stubFetch(async () => new Response(goldenText, { status: 200 }));
+    render(<ScanPage />);
+
+    const file = new File(["{}"], "sbom.json", { type: "application/json" });
+    fireEvent.change(screen.getByLabelText("SBOM/VEX file"), { target: { files: [file] } });
+    scanFor("https://example.com");
+
+    await screen.findByRole("region", { name: "Low confidence" });
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ url: "https://example.com", sbomDocument: "e30=" }));
+  });
+
   it("shows the gateway's message as an error, not an empty report", async () => {
     stubFetch(
       async () => new Response('{"code":13,"message":"internal error","details":[]}', { status: 500 }),

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ScanStatus, type ScanReport } from "../gen/touchstone/v1/scan_pb";
-import { requestScan, ScanError } from "../lib/api";
+import { requestScan, ScanError, type ScanInput } from "../lib/api";
 import { ReportView } from "./report-view";
 import { ScanForm } from "./scan-form";
 
@@ -16,10 +16,10 @@ type View =
 export function ScanPage() {
   const [view, setView] = useState<View>({ kind: "idle" });
 
-  async function scan(url: string) {
+  async function scan(input: ScanInput) {
     setView({ kind: "scanning" });
     try {
-      const report = await requestScan(url);
+      const report = await requestScan(input);
       // An unreachable target returns a report with no components, which
       // would look like a clean result. Show it as an error instead.
       if (report.scanStatus !== ScanStatus.OK) {

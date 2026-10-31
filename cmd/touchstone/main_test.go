@@ -163,11 +163,40 @@ func TestScanFormatFlag(t *testing.T) {
 	}
 }
 
+// capture is a ScanService that records the request it was given.
+type capture struct {
+	touchstonev1.UnimplementedScanServiceServer
+	req *touchstonev1.ScanRequest
+}
+
+func (c *capture) Scan(ctx context.Context, req *touchstonev1.ScanRequest) (*touchstonev1.ScanReport, error) {
+	c.req = req
+	return fixedStub(fetch.Options{}).Scan(ctx, req)
+}
+
+func TestScanSuppliedSBOMFlags(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "sbom.json")
+	doc := []byte(`{"bomFormat": "CycloneDX", "components": []}`)
+	if err := os.WriteFile(file, doc, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := &capture{}
+	newSvc := func(fetch.Options) touchstonev1.ScanServiceServer { return c }
+	args := []string{"scan", "--sbom", file, "--sbom-url", "https://vendor.example/sbom.json", "https://vendor.example"}
+	if err := run(context.Background(), args, &bytes.Buffer{}, newSvc); err != nil {
+		t.Fatalf("run(%q): %v", args, err)
+	}
+	if !bytes.Equal(c.req.GetSbomDocument(), doc) || c.req.GetSbomUrl() != "https://vendor.example/sbom.json" {
+		t.Errorf("ScanRequest = %v, want the file's bytes as sbom_document and the sbom_url", c.req)
+	}
+}
+
 func TestScanRejectsBadArgs(t *testing.T) {
 	for _, args := range [][]string{
 		nil, {"scan"}, {"serve", "https://example.com"}, {"scan", "ftp://example.com"}, {"scan", "example.com"},
 		{"scan", "--allow-private"}, {"scan", "--no-such-flag", "https://example.com"}, {"scan", "https://a.example", "https://b.example"},
 		{"scan", "--format", "xml", "https://example.com"}, {"scan", "--format", "https://example.com"},
+		{"scan", "--sbom", filepath.Join(t.TempDir(), "missing.json"), "https://example.com"},
 	} {
 		if err := run(context.Background(), args, &bytes.Buffer{}, fixedStub); err == nil {
 			t.Errorf("run(%q) = nil error, want error", args)

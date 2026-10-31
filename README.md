@@ -34,6 +34,27 @@ stale. `make test` and `make web-test` run the Go and web suites. See the design
 [`docs/architecture/touchstone.md`](docs/architecture/touchstone.md) and
 the PRD at [`docs/product/touchstone.md`](docs/product/touchstone.md).
 
+### Discovery and a supplied SBOM/VEX
+
+Every scan checks `/.well-known/security.txt` (then `/security.txt`),
+`/.well-known/csaf/provider-metadata.json` and `/.well-known/tea` on the
+target's origin. It follows each `CSAF:` field and the provider metadata's
+public ROLIE feeds to the five newest CSAF documents, and reads the products
+of those that are CSAF VEX as High-confidence components. `/.well-known/tea`
+is recorded in `checked` but not queried. Every request is in the report's
+`checked` list.
+
+If you already have the vendor's SBOM or VEX (CycloneDX, SPDX 2.3, OpenVEX
+or CSAF, as JSON), pass it in. Its components are High confidence with
+`SBOM_SUPPLIED` evidence:
+
+```sh
+touchstone scan --sbom vendor-sbom.json https://vendor.example
+touchstone scan --sbom-url https://vendor.example/sbom.json https://vendor.example
+```
+
+The web page has the same two inputs: an upload field and a URL field.
+
 ### Web page: `touchstone serve`
 
 `touchstone serve` runs the web page and `POST /v1/scans` on one port.

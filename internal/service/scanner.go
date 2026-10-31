@@ -3,25 +3,31 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	touchstonev1 "github.com/FootprintAI/touchstone/gen/go/touchstone/v1"
+	"github.com/FootprintAI/touchstone/internal/discover"
 	"github.com/FootprintAI/touchstone/internal/fetch"
 	"github.com/FootprintAI/touchstone/internal/fingerprint"
 	"github.com/FootprintAI/touchstone/internal/pipeline"
+	"github.com/FootprintAI/touchstone/internal/sbom"
 	"github.com/FootprintAI/touchstone/internal/vuln"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// Scanner is the walking-skeleton ScanService (slice S2). It fetches the
-// target page and the scripts it loads through a PassiveFetcher,
-// fingerprints them, looks each component up through vuln.Matcher (OSV by
-// purl, NVD by CPE, enriched with KEV and EPSS), and returns the report.
-// Merging across tiers comes in a later slice.
+// Scanner is the ScanService. It fetches the target page and the scripts
+// it loads through a PassiveFetcher and fingerprints them, discovers
+// vendor-published evidence (security.txt, CSAF VEX, TEA, repo links),
+// reads the reviewer-supplied SBOM/VEX if any, looks each component up
+// through vuln.Matcher (OSV by purl, NVD by CPE, enriched with KEV and
+// EPSS), and returns the report. Components are listed highest tier first
+// and merged by key; conflict recording comes in a later slice.
 type Scanner struct {
 	touchstonev1.UnimplementedScanServiceServer
 
@@ -48,6 +54,13 @@ func (s *Scanner) Scan(ctx context.Context, req *touchstonev1.ScanRequest) (*tou
 	}
 	opts := s.Fetch
 	opts.Budget = req.GetRequestBudget()
+	if raw := req.GetSbomUrl(); raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "sbom_url must be an absolute http(s) URL, got %q", raw)
+		}
+		opts.SuppliedURL = raw
+	}
 	f, err := fetch.New(target.String(), opts)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -74,13 +87,37 @@ func (s *Scanner) Scan(ctx context.Context, req *touchstonev1.ScanRequest) (*tou
 	}
 	rep.ScanStatus = touchstonev1.ScanStatus_SCAN_STATUS_OK
 
-	comps, fpErr := collect(ctx, f, page)
+	fingerprinted, fpErr := collect(ctx, f, page)
 	rep.Sources = append(rep.Sources, &touchstonev1.SourceStatus{
 		Source: "fingerprint",
 		Ok:     fpErr == nil,
 		Error:  errText(fpErr),
 	})
 
+	var discovered []pipeline.Component
+	found, discErr := discover.Discover(ctx, f, target.String(), page)
+	if found != nil {
+		discovered = found.Components
+	}
+	rep.Sources = append(rep.Sources, &touchstonev1.SourceStatus{
+		Source: "discover",
+		Ok:     discErr == nil,
+		Error:  errText(discErr),
+	})
+
+	var given []pipeline.Component
+	if req.GetSbomUrl() != "" || len(req.GetSbomDocument()) > 0 {
+		var supErr error
+		given, supErr = supplied(ctx, f, req)
+		rep.Sources = append(rep.Sources, &touchstonev1.SourceStatus{
+			Source: "supplied",
+			Ok:     supErr == nil,
+			Error:  errText(supErr),
+		})
+	}
+
+	// Highest tier first: merge keeps the first component's confidence.
+	comps := merge(slices.Concat(given, discovered, fingerprinted))
 	rep.LookupStatus, rep.Components = s.lookup(ctx, rep, comps)
 	s.finish(rep, f, now)
 	return rep, nil
@@ -125,6 +162,50 @@ func collect(ctx context.Context, f fetch.Fetcher, page *fetch.Response) ([]pipe
 	}
 	return merge(comps), errors.Join(errs...)
 }
+
+// supplied reads the reviewer's own SBOM/VEX (decision D1): the uploaded
+// document, and the one at sbom_url fetched as SUPPLIED. Its components
+// are High confidence with SBOM_SUPPLIED evidence.
+func supplied(ctx context.Context, f fetch.Fetcher, req *touchstonev1.ScanRequest) ([]pipeline.Component, error) {
+	var comps []pipeline.Component
+	var errs []error
+	read := func(location string, data []byte) {
+		doc, err := sbom.Parse(data)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", location, err))
+			return
+		}
+		for _, c := range doc.Components {
+			comps = append(comps, pipeline.Component{
+				Name:       c.Name,
+				Version:    c.Version,
+				Purl:       c.Purl,
+				CPE:        c.CPE,
+				Confidence: "HIGH",
+				Evidence:   []pipeline.Evidence{{Kind: "SBOM_SUPPLIED", Location: location, Detail: string(doc.Format)}},
+			})
+		}
+	}
+	if doc := req.GetSbomDocument(); len(doc) > 0 {
+		read(UploadedLocation, doc)
+	}
+	if u := req.GetSbomUrl(); u != "" {
+		resp, err := f.Get(ctx, u, fetch.ReasonSupplied)
+		switch {
+		case err != nil:
+			errs = append(errs, err)
+		case resp.StatusCode < 200 || resp.StatusCode >= 300:
+			errs = append(errs, fmt.Errorf("%s: HTTP %d", u, resp.StatusCode))
+		default:
+			read(u, resp.Body)
+		}
+	}
+	return comps, errors.Join(errs...)
+}
+
+// UploadedLocation is the evidence location of a component read from an
+// uploaded SBOM/VEX document, which has no URL.
+const UploadedLocation = "uploaded SBOM/VEX document"
 
 // lookup asks the Matcher about every component (by purl, else CPE) and
 // converts the components, with their ranked vulnerabilities, to proto.

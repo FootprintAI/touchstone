@@ -1,5 +1,5 @@
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
-import { ScanReportSchema, type ScanReport } from "../gen/touchstone/v1/scan_pb";
+import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
+import { ScanReportSchema, ScanRequestSchema, type ScanReport } from "../gen/touchstone/v1/scan_pb";
 
 /** The ScanService route, served by `touchstone serve` through grpc-gateway. */
 export const SCAN_PATH = "/v1/scans";
@@ -7,18 +7,27 @@ export const SCAN_PATH = "/v1/scans";
 /** A scan that produced no report. The message is shown to the reviewer. */
 export class ScanError extends Error {}
 
+/** What the reviewer asks for: the vendor URL, plus an SBOM/VEX they already have, by URL or upload. */
+export type ScanInput = {
+  url: string;
+  sbomUrl?: string;
+  sbomDocument?: Uint8Array;
+};
+
 /**
- * POSTs the URL and decodes the reply with the generated parser. Any failure,
- * including a body that is not a ScanReport, becomes a ScanError, so the page
- * never shows a partial or empty report.
+ * POSTs the scan request and decodes the reply with the generated parser. Any
+ * failure, including a body that is not a ScanReport, becomes a ScanError, so
+ * the page never shows a partial or empty report.
  */
-export async function requestScan(url: string, fetchFn: typeof fetch = fetch): Promise<ScanReport> {
+export async function requestScan(input: ScanInput, fetchFn: typeof fetch = fetch): Promise<ScanReport> {
+  // The generated serializer leaves out empty fields and base64-encodes the upload.
+  const request = toJson(ScanRequestSchema, create(ScanRequestSchema, input));
   let res: Response;
   try {
     res = await fetchFn(SCAN_PATH, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify(request),
     });
   } catch {
     throw new ScanError("The scan service could not be reached. Is `touchstone serve` running?");
