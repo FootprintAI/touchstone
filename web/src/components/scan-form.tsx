@@ -4,6 +4,9 @@ import { useState, type FormEvent } from "react";
 import type { ScanInput } from "../lib/api";
 import { isScannableUrl } from "../lib/url";
 
+/** The largest SBOM/VEX document the service accepts: 2 MiB. */
+export const MAX_SBOM_BYTES = 2 << 20;
+
 /**
  * One URL input, plus an optional SBOM/VEX the reviewer already has, by URL or
  * upload. A value that is not an absolute http(s) URL is refused here, before
@@ -15,7 +18,9 @@ export function ScanForm({ onScan, busy }: { onScan: (input: ScanInput) => void;
   const [sbomFile, setSbomFile] = useState<File | undefined>(undefined);
   const [invalid, setInvalid] = useState(false);
   const [sbomUrlInvalid, setSbomUrlInvalid] = useState(false);
+  const [sbomText, setSbomText] = useState("");
   const [fileError, setFileError] = useState(false);
+  const [tooLarge, setTooLarge] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -26,6 +31,7 @@ export function ScanForm({ onScan, busy }: { onScan: (input: ScanInput) => void;
     setInvalid(!ok);
     setSbomUrlInvalid(!suppliedOk);
     setFileError(false);
+    setTooLarge(false);
     if (!ok || !suppliedOk) {
       return;
     }
@@ -33,7 +39,19 @@ export function ScanForm({ onScan, busy }: { onScan: (input: ScanInput) => void;
     if (supplied !== "") {
       input.sbomUrl = supplied;
     }
-    if (sbomFile) {
+    if (sbomText.trim() !== "") {
+      // Pasted text wins over a chosen file.
+      const bytes = new TextEncoder().encode(sbomText);
+      if (bytes.length > MAX_SBOM_BYTES) {
+        setTooLarge(true);
+        return;
+      }
+      input.sbomDocument = bytes;
+    } else if (sbomFile) {
+      if (sbomFile.size > MAX_SBOM_BYTES) {
+        setTooLarge(true);
+        return;
+      }
       try {
         input.sbomDocument = await readFile(sbomFile);
       } catch {
@@ -108,8 +126,26 @@ export function ScanForm({ onScan, busy }: { onScan: (input: ScanInput) => void;
             className="text-sm"
           />
         </div>
+        <div className="flex flex-wrap items-start gap-2">
+          <label htmlFor="sbom-text">Or paste the SBOM/VEX</label>
+          <textarea
+            id="sbom-text"
+            name="sbomText"
+            rows={4}
+            value={sbomText}
+            onChange={(e) => setSbomText(e.target.value)}
+            className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-1 font-mono text-xs focus:border-slate-500 focus:outline-none"
+          />
+        </div>
         {fileError && <p className="text-sm text-red-700">The SBOM/VEX file could not be read.</p>}
-        <p className="text-xs text-slate-500">CycloneDX, SPDX 2.3, OpenVEX or CSAF, as JSON.</p>
+        {tooLarge && (
+          <p role="alert" className="text-sm text-red-700">
+            The SBOM/VEX is larger than 2 MiB. Use a smaller document.
+          </p>
+        )}
+        <p className="text-xs text-slate-500">
+          CycloneDX, SPDX 2.3, OpenVEX or CSAF, as JSON, up to 2 MiB. Pasted text is used instead of a chosen file.
+        </p>
       </fieldset>
     </form>
   );

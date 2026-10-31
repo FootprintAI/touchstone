@@ -53,7 +53,11 @@ touchstone scan --sbom vendor-sbom.json https://vendor.example
 touchstone scan --sbom-url https://vendor.example/sbom.json https://vendor.example
 ```
 
-The web page has the same two inputs: an upload field and a URL field.
+The web page has the same inputs: an SBOM/VEX URL (`sbom_url`), and a file
+upload or pasted text (`sbom_document`). The document is capped at 2 MiB; the
+form rejects a larger one before sending. Pasted text is used instead of a
+chosen file. The report shows the supplied components under High confidence
+with `SBOM_SUPPLIED` evidence.
 
 ### Web page: `touchstone serve`
 

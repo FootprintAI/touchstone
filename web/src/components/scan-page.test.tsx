@@ -78,6 +78,40 @@ describe("ScanPage", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ url: "https://example.com", sbomDocument: "e30=" }));
   });
 
+  it("sends pasted SBOM/VEX text as sbomDocument", async () => {
+    const fetchMock = stubFetch(async () => new Response(goldenText, { status: 200 }));
+    render(<ScanPage />);
+
+    fireEvent.change(screen.getByLabelText("Or paste the SBOM/VEX"), { target: { value: "{}" } });
+    scanFor("https://example.com");
+
+    await screen.findByRole("region", { name: "Low confidence" });
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ url: "https://example.com", sbomDocument: "e30=" }));
+  });
+
+  it("rejects a pasted document over 2 MiB without sending a request", async () => {
+    const fetchMock = stubFetch(async () => new Response(goldenText));
+    render(<ScanPage />);
+
+    fireEvent.change(screen.getByLabelText("Or paste the SBOM/VEX"), { target: { value: "a".repeat(2 * 1024 * 1024 + 1) } });
+    scanFor("https://example.com");
+
+    expect((await screen.findByRole("alert")).textContent).toContain("larger than 2 MiB");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an uploaded file over 2 MiB without sending a request", async () => {
+    const fetchMock = stubFetch(async () => new Response(goldenText));
+    render(<ScanPage />);
+
+    const file = new File(["a".repeat(2 * 1024 * 1024 + 1)], "big.json", { type: "application/json" });
+    fireEvent.change(screen.getByLabelText("SBOM/VEX file"), { target: { files: [file] } });
+    scanFor("https://example.com");
+
+    expect((await screen.findByRole("alert")).textContent).toContain("larger than 2 MiB");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("shows the gateway's message as an error, not an empty report", async () => {
     stubFetch(
       async () => new Response('{"code":13,"message":"internal error","details":[]}', { status: 500 }),
