@@ -12,6 +12,9 @@ import "context"
 type Release struct {
 	Tag        string
 	TarballURL string
+	// DefaultBranch is true when the repo has no non-prerelease semver tag
+	// and Tag is the default branch name instead.
+	DefaultBranch bool
 }
 
 // Forge resolves a repo URL to its latest release and fetches release
