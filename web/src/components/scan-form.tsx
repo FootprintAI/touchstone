@@ -4,10 +4,13 @@ import { useState, type FormEvent } from "react";
 import type { ScanInput } from "../lib/api";
 import { isScannableUrl } from "../lib/url";
 
+/** The server's cap on an uploaded SBOM/VEX document (D1). */
+export const MAX_SBOM_DOCUMENT_BYTES = 2 * 1024 * 1024;
+
 /**
  * One URL input, plus an optional SBOM/VEX the reviewer already has, by URL or
- * upload. A value that is not an absolute http(s) URL is refused here, before
- * any request.
+ * upload. A value that is not an absolute http(s) URL, or a file over the
+ * cap, is refused here, before any request.
  */
 export function ScanForm({ onScan, busy }: { onScan: (input: ScanInput) => void; busy: boolean }) {
   const [value, setValue] = useState("");
@@ -15,6 +18,7 @@ export function ScanForm({ onScan, busy }: { onScan: (input: ScanInput) => void;
   const [sbomFile, setSbomFile] = useState<File | undefined>(undefined);
   const [invalid, setInvalid] = useState(false);
   const [sbomUrlInvalid, setSbomUrlInvalid] = useState(false);
+  const [fileTooLarge, setFileTooLarge] = useState(false);
   const [fileError, setFileError] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -23,10 +27,12 @@ export function ScanForm({ onScan, busy }: { onScan: (input: ScanInput) => void;
     const supplied = sbomUrl.trim();
     const ok = isScannableUrl(url);
     const suppliedOk = supplied === "" || isScannableUrl(supplied);
+    const tooLarge = sbomFile !== undefined && sbomFile.size > MAX_SBOM_DOCUMENT_BYTES;
     setInvalid(!ok);
     setSbomUrlInvalid(!suppliedOk);
+    setFileTooLarge(tooLarge);
     setFileError(false);
-    if (!ok || !suppliedOk) {
+    if (!ok || !suppliedOk || tooLarge) {
       return;
     }
     const input: ScanInput = { url };
@@ -104,12 +110,22 @@ export function ScanForm({ onScan, busy }: { onScan: (input: ScanInput) => void;
             name="sbomDocument"
             type="file"
             accept=".json,application/json"
-            onChange={(e) => setSbomFile(e.target.files?.[0])}
+            onChange={(e) => {
+              setSbomFile(e.target.files?.[0]);
+              setFileTooLarge(false);
+            }}
+            aria-invalid={fileTooLarge}
+            aria-describedby={fileTooLarge ? "sbom-file-error" : undefined}
             className="text-sm"
           />
         </div>
+        {fileTooLarge && (
+          <p id="sbom-file-error" className="text-sm text-red-700">
+            The SBOM/VEX file is too large; the limit is 2 MiB.
+          </p>
+        )}
         {fileError && <p className="text-sm text-red-700">The SBOM/VEX file could not be read.</p>}
-        <p className="text-xs text-slate-500">CycloneDX, SPDX 2.3, OpenVEX or CSAF, as JSON.</p>
+        <p className="text-xs text-slate-500">CycloneDX, SPDX 2.3, OpenVEX or CSAF, as JSON, up to 2 MiB.</p>
       </fieldset>
     </form>
   );
