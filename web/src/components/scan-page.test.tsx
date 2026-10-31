@@ -78,6 +78,18 @@ describe("ScanPage", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ url: "https://example.com", sbomDocument: "e30=" }));
   });
 
+  it("refuses an SBOM/VEX file over 2 MiB without sending a request", () => {
+    const fetchMock = stubFetch(async () => new Response(goldenText));
+    render(<ScanPage />);
+
+    const big = new File([new Uint8Array(2 * 1024 * 1024 + 1)], "big-sbom.json", { type: "application/json" });
+    fireEvent.change(screen.getByLabelText("SBOM/VEX file"), { target: { files: [big] } });
+    scanFor("https://example.com");
+
+    expect(screen.getByText(/too large/)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("shows the gateway's message as an error, not an empty report", async () => {
     stubFetch(
       async () => new Response('{"code":13,"message":"internal error","details":[]}', { status: 500 }),
