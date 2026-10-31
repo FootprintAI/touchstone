@@ -69,11 +69,20 @@ func TestParse(t *testing.T) {
 		}}},
 		{"OpenVEX", openVEX, Document{Format: FormatOpenVEX, VEX: true, Components: []Component{
 			{Name: "jquery", Version: "1.12.4", Purl: "pkg:npm/jquery@1.12.4"},
-		}}},
+		}, Statements: []Statement{{
+			Vulnerability: "CVE-2020-11022", Status: VEXNotAffected,
+			Products: []Component{
+				{Name: "jquery", Version: "1.12.4", Purl: "pkg:npm/jquery@1.12.4"},
+				{Name: "jquery", Version: "1.12.4", Purl: "pkg:npm/jquery@1.12.4"},
+			},
+		}}}},
 		{"CSAF VEX", csafVEX, Document{Format: FormatCSAF, VEX: true, Components: []Component{
 			{Name: "nginx", Version: "1.25.3", CPE: "cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*"},
 			{Name: "jquery", Version: "3.7.1", Purl: "pkg:npm/jquery@3.7.1"},
-		}}},
+		}, Statements: []Statement{{
+			Vulnerability: "CVE-2023-44487", Status: VEXNotAffected,
+			Products: []Component{{Name: "nginx", Version: "1.25.3", CPE: "cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*"}},
+		}}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

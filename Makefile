@@ -1,4 +1,4 @@
-.PHONY: generate lint breaking test web-test web-build
+.PHONY: generate lint breaking test fuzz web-test web-build
 
 # Requires buf (https://buf.build): regenerates gen/, web/src/gen/,
 # openapi/ and schema/ from proto/touchstone/v1/scan.proto, using the
@@ -19,6 +19,13 @@ test:
 	go vet ./...
 	staticcheck ./...
 	go test ./...
+
+# Runs each SBOM/VEX parser's fuzz target for FUZZTIME (default 20s).
+FUZZTIME ?= 20s
+fuzz:
+	for t in FuzzCycloneDX FuzzSPDX FuzzOpenVEX FuzzCSAF FuzzParse; do \
+		go test -run '^$$' -fuzz "^$$t$$" -fuzztime $(FUZZTIME) ./internal/sbom || exit 1; \
+	done
 
 web-test:
 	cd web && npm install --no-package-lock && npx tsc --noEmit && npx vitest run

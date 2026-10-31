@@ -13,6 +13,7 @@ import (
 type Match struct {
 	Finding
 	Enrichment
+	VEX VEXInfo // set by ApplyVEX
 }
 
 // Rank orders matches for display: KEV-listed first, then EPSS descending,

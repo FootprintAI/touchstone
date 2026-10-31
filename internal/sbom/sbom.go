@@ -23,6 +23,16 @@ const (
 	FormatCSAF      Format = "CSAF"
 )
 
+// ParseError is returned when a document is in a supported format but
+// malformed or incomplete. Err says what is wrong.
+type ParseError struct {
+	Format Format
+	Err    error
+}
+
+func (e *ParseError) Error() string { return fmt.Sprintf("sbom: %s: %v", e.Format, e.Err) }
+func (e *ParseError) Unwrap() error { return e.Err }
+
 // ErrUnknownFormat is returned for input that is not a JSON document in a
 // supported format.
 var ErrUnknownFormat = errors.New("sbom: not a CycloneDX, SPDX 2.3, OpenVEX or CSAF 2.0 JSON document")
@@ -42,6 +52,9 @@ type Document struct {
 	// and for CycloneDX carrying vulnerabilities (CycloneDX VEX).
 	VEX        bool
 	Components []Component
+	// Statements are the VEX statements the document makes, in document
+	// order. Empty for an SBOM without vulnerability analysis.
+	Statements []Statement
 }
 
 // probe holds the fields that tell the formats apart.
@@ -78,20 +91,22 @@ type cdxComponent struct {
 	Version    string         `json:"version"`
 	Purl       string         `json:"purl"`
 	CPE        string         `json:"cpe"`
+	BOMRef     string         `json:"bom-ref"`
 	Components []cdxComponent `json:"components"`
 }
 
 type cdxBOM struct {
-	Components      []cdxComponent    `json:"components"`
-	Vulnerabilities []json.RawMessage `json:"vulnerabilities"`
+	Components      []cdxComponent `json:"components"`
+	Vulnerabilities []cdxVuln      `json:"vulnerabilities"`
 }
 
 func parseCycloneDX(data []byte) (*Document, error) {
 	var bom cdxBOM
 	if err := json.Unmarshal(data, &bom); err != nil {
-		return nil, fmt.Errorf("sbom: CycloneDX: %v", err)
+		return nil, &ParseError{FormatCycloneDX, err}
 	}
 	doc := &Document{Format: FormatCycloneDX, VEX: len(bom.Vulnerabilities) > 0}
+	refs := map[string]Component{}
 	var walk func([]cdxComponent)
 	walk = func(cs []cdxComponent) {
 		for _, c := range cs {
@@ -99,11 +114,16 @@ func parseCycloneDX(data []byte) (*Document, error) {
 			if c.Group != "" {
 				name = c.Group + "/" + c.Name
 			}
-			doc.add(Component{Name: name, Version: c.Version, Purl: c.Purl, CPE: c.CPE})
+			comp := normalize(Component{Name: name, Version: c.Version, Purl: c.Purl, CPE: c.CPE})
+			doc.add(comp)
+			if c.BOMRef != "" {
+				refs[c.BOMRef] = comp
+			}
 			walk(c.Components)
 		}
 	}
 	walk(bom.Components)
+	doc.Statements = cdxStatements(bom.Vulnerabilities, refs)
 	return doc, nil
 }
 
@@ -121,7 +141,7 @@ type spdxDocument struct {
 func parseSPDX(data []byte) (*Document, error) {
 	var sd spdxDocument
 	if err := json.Unmarshal(data, &sd); err != nil {
-		return nil, fmt.Errorf("sbom: SPDX: %v", err)
+		return nil, &ParseError{FormatSPDX, err}
 	}
 	doc := &Document{Format: FormatSPDX}
 	for _, p := range sd.Packages {
@@ -142,35 +162,21 @@ func parseSPDX(data []byte) (*Document, error) {
 }
 
 type openVEXDocument struct {
-	Statements []struct {
-		Products []struct {
-			ID          string `json:"@id"`
-			Identifiers struct {
-				Purl  string `json:"purl"`
-				CPE23 string `json:"cpe23"`
-			} `json:"identifiers"`
-		} `json:"products"`
-	} `json:"statements"`
+	Statements []openVEXStatement `json:"statements"`
 }
 
 func parseOpenVEX(data []byte) (*Document, error) {
 	var vd openVEXDocument
 	if err := json.Unmarshal(data, &vd); err != nil {
-		return nil, fmt.Errorf("sbom: OpenVEX: %v", err)
+		return nil, &ParseError{FormatOpenVEX, err}
 	}
 	doc := &Document{Format: FormatOpenVEX, VEX: true}
 	for _, s := range vd.Statements {
 		for _, p := range s.Products {
-			c := Component{Purl: p.Identifiers.Purl, CPE: p.Identifiers.CPE23}
-			if c.Purl == "" && strings.HasPrefix(p.ID, "pkg:") {
-				c.Purl = p.ID
-			}
-			if c.Purl == "" && c.CPE == "" {
-				c.Name = p.ID
-			}
-			doc.add(c)
+			doc.add(p.component())
 		}
 	}
+	doc.Statements = openVEXStatements(vd.Statements)
 	return doc, nil
 }
 
@@ -183,6 +189,7 @@ type csafDocument struct {
 		Branches         []csafBranch  `json:"branches"`
 		FullProductNames []csafProduct `json:"full_product_names"`
 	} `json:"product_tree"`
+	Vulnerabilities []csafVuln `json:"vulnerabilities"`
 }
 
 type csafBranch struct {
@@ -208,12 +215,20 @@ type csafProduct struct {
 func ParseCSAF(data []byte) (*Document, error) {
 	var cd csafDocument
 	if err := json.Unmarshal(data, &cd); err != nil {
-		return nil, fmt.Errorf("sbom: CSAF: %v", err)
+		return nil, &ParseError{FormatCSAF, err}
 	}
 	if cd.Document.CSAFVersion == "" || cd.Document.Category == "" {
-		return nil, errors.New("sbom: CSAF: document.csaf_version and document.category are required")
+		return nil, &ParseError{FormatCSAF, errors.New("document.csaf_version and document.category are required")}
 	}
 	doc := &Document{Format: FormatCSAF, VEX: cd.Document.Category == "csaf_vex"}
+	products := map[string]Component{}
+	addProduct := func(p csafProduct, name, version string) {
+		c := normalize(csafComponent(p, name, version))
+		doc.add(c)
+		if p.ProductID != "" {
+			products[p.ProductID] = c
+		}
+	}
 	var walk func(bs []csafBranch, name, version string)
 	walk = func(bs []csafBranch, name, version string) {
 		for _, b := range bs {
@@ -225,15 +240,16 @@ func ParseCSAF(data []byte) (*Document, error) {
 				v = b.Name
 			}
 			if b.Product != nil {
-				doc.add(csafComponent(*b.Product, n, v))
+				addProduct(*b.Product, n, v)
 			}
 			walk(b.Branches, n, v)
 		}
 	}
 	walk(cd.ProductTree.Branches, "", "")
 	for _, p := range cd.ProductTree.FullProductNames {
-		doc.add(csafComponent(p, "", ""))
+		addProduct(p, "", "")
 	}
+	doc.Statements = csafStatements(cd.Vulnerabilities, products)
 	return doc, nil
 }
 
@@ -250,15 +266,7 @@ func csafComponent(p csafProduct, name, version string) Component {
 // document left them out, and skips a component that names nothing or
 // repeats one already listed.
 func (d *Document) add(c Component) {
-	if c.Purl != "" && (c.Name == "" || c.Version == "") {
-		name, version := purlNameVersion(c.Purl)
-		if c.Name == "" {
-			c.Name = name
-		}
-		if c.Version == "" {
-			c.Version = version
-		}
-	}
+	c = normalize(c)
 	if c.Name == "" && c.Purl == "" && c.CPE == "" {
 		return
 	}
@@ -268,6 +276,21 @@ func (d *Document) add(c Component) {
 		}
 	}
 	d.Components = append(d.Components, c)
+}
+
+// normalize fills a component's name and version from its purl when the
+// document left them out.
+func normalize(c Component) Component {
+	if c.Purl != "" && (c.Name == "" || c.Version == "") {
+		name, version := purlNameVersion(c.Purl)
+		if c.Name == "" {
+			c.Name = name
+		}
+		if c.Version == "" {
+			c.Version = version
+		}
+	}
+	return c
 }
 
 // purlNameVersion returns the name and version of a package URL,
