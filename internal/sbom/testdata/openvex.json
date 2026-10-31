@@ -1,0 +1,19 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://example.com/vex/1",
+  "author": "Example",
+  "timestamp": "2026-01-01T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {"vulnerability": {"name": "CVE-2020-11022", "aliases": ["GHSA-gxr4-xjj5-5px2"]},
+     "products": [{"@id": "pkg:npm/jquery@3.7.1"}],
+     "status": "not_affected", "justification": "vulnerable_code_not_in_execute_path",
+     "impact_statement": "never called"},
+    {"vulnerability": {"name": "CVE-2021-44228"},
+     "products": [{"@id": "product-1", "identifiers": {"purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.17.1"}}],
+     "status": "fixed"},
+    {"vulnerability": {"name": "CVE-2022-0001"},
+     "products": [{"@id": "pkg:npm/other@1.0.0"}],
+     "status": "under_investigation"}
+  ]
+}

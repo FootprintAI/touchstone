@@ -1,0 +1,21 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "components": [
+    {"type": "library", "bom-ref": "jq", "name": "jquery", "version": "3.7.1", "purl": "pkg:npm/jquery@3.7.1"},
+    {"type": "library", "bom-ref": "log4j", "group": "org.apache.logging.log4j", "name": "log4j-core", "version": "2.17.1"}
+  ],
+  "vulnerabilities": [
+    {"id": "CVE-2020-11022", "references": [{"id": "GHSA-gxr4-xjj5-5px2", "source": {"name": "GitHub"}}],
+     "analysis": {"state": "not_affected", "justification": "code_not_reachable", "detail": "the vulnerable API is never called"},
+     "affects": [{"ref": "jq"}]},
+    {"id": "CVE-2021-44228",
+     "analysis": {"state": "resolved"},
+     "affects": [{"ref": "log4j"}]},
+    {"id": "CVE-2022-0001",
+     "analysis": {"state": "exploitable"},
+     "affects": [{"ref": "pkg:npm/other@1.0.0"}]},
+    {"id": "CVE-2022-0002", "affects": [{"ref": "jq"}]}
+  ]
+}

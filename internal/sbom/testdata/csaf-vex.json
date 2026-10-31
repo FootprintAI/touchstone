@@ -1,0 +1,23 @@
+{
+  "document": {"category": "csaf_vex", "csaf_version": "2.0", "title": "Example VEX"},
+  "product_tree": {
+    "branches": [{"category": "vendor", "name": "Example", "branches": [
+      {"category": "product_name", "name": "nginx", "branches": [
+        {"category": "product_version", "name": "1.25.3",
+         "product": {"product_id": "P1", "name": "Example nginx 1.25.3",
+           "product_identification_helper": {"cpe": "cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*"}}}
+      ]}
+    ]}],
+    "full_product_names": [
+      {"product_id": "P2", "name": "jquery 3.7.1", "product_identification_helper": {"purl": "pkg:npm/jquery@3.7.1"}},
+      {"product_id": "P3", "name": "lodash 4.17.20", "product_identification_helper": {"purl": "pkg:npm/lodash@4.17.20"}}
+    ]
+  },
+  "vulnerabilities": [
+    {"cve": "CVE-2023-44487", "ids": [{"system_name": "GitHub", "text": "GHSA-qppj-fm5r-hxr3"}],
+     "product_status": {"known_not_affected": ["P1"], "known_affected": ["P3"]},
+     "flags": [{"label": "vulnerable_code_not_in_execute_path", "product_ids": ["P1"]}]},
+    {"cve": "CVE-2020-11022",
+     "product_status": {"fixed": ["P2"]}}
+  ]
+}

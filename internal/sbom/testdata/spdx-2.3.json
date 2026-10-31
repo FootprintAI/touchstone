@@ -1,0 +1,12 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "example",
+  "packages": [
+    {"SPDXID": "SPDXRef-lodash", "name": "lodash", "versionInfo": "4.17.21",
+     "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:npm/lodash@4.17.21"}]},
+    {"SPDXID": "SPDXRef-openssl", "name": "openssl", "versionInfo": "3.0.13",
+     "externalRefs": [{"referenceCategory": "SECURITY", "referenceType": "cpe23Type", "referenceLocator": "cpe:2.3:a:openssl:openssl:3.0.13:*:*:*:*:*:*:*"}]}
+  ]
+}
