@@ -1,0 +1,1 @@
+touchstone model tier check
